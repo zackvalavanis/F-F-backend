@@ -1,9 +1,7 @@
 Rails.application.config.middleware.insert_before 0, Rack::Cors do
   allow do
-    # Frontend origin
-    origins 'http://localhost:5173'  # <-- React dev server
+    origins 'http://localhost:5173', 'https://f-f-frontend-3pr4.vercel.app'
 
-    # Resources you allow to be accessed
     resource '*',
       headers: :any,
       methods: [:get, :post, :put, :patch, :delete, :options, :head],
