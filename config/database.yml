@@ -79,6 +79,5 @@ test:
 #
 production:
   <<: *default
-  database: forkandflame_production
-  username: forkandflame
-  password: <%= ENV["FORKANDFLAME_DATABASE_PASSWORD"] %>
+  # Use Heroku's DATABASE_URL for production
+  url: <%= ENV['DATABASE_URL'] %>
