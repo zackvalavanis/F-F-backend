@@ -5,7 +5,8 @@ class RecipesController < ApplicationController
   # Helper method to serialize a recipe with image URLs
   def recipe_with_images(recipe)
     recipe.as_json.merge(
-      images: recipe.images.map { |img| url_for(img) }
+      images: recipe.images.map { |img| url_for(img) },
+      user: recipe.user.present? ? { id: recipe.user.id, name: recipe.user.name, email: recipe.user.email } : nil
     )
   end
 
@@ -28,15 +29,15 @@ class RecipesController < ApplicationController
   # POST /recipes
   def create
     @recipe = Recipe.new(
-      user_id: params[:user_id],
+      user_id: 1,
       title: params[:title],
-      prep_time: params[:prep_time],
-      cook_time: params[:cook_time],
-      servings: params[:servings],
-      difficulty: params[:difficulty],
+      prep_time: params[:prep_time].to_i,
+      cook_time: params[:cook_time].to_i,
+      servings: params[:servings].to_i,
+      difficulty: params[:difficulty].to_i,
       tags: params[:tags],
       category: params[:category],
-      rating: params[:rating],
+      rating: params[:rating].to_i,
       description: params[:description],
       ingredients: params[:ingredients]
     )
@@ -45,7 +46,7 @@ class RecipesController < ApplicationController
       attach_images(@recipe)
       render json: { message: "Recipe created successfully", recipe: recipe_with_images(@recipe) }, status: :created
     else
-      render json: { errors: @recipe.errors.full_messages }, status: :unprocessable_entity
+      render json: { errors: @recipe.errors.full_messages }, status: :unprocessable_content
     end
   end
 
@@ -56,13 +57,13 @@ class RecipesController < ApplicationController
 
     if @recipe.update(
       title: params[:title] || @recipe.title,
-      prep_time: params[:prep_time] || @recipe.prep_time,
-      cook_time: params[:cook_time] || @recipe.cook_time,
-      servings: params[:servings] || @recipe.servings,
-      difficulty: params[:difficulty] || @recipe.difficulty,
+      prep_time: params[:prep_time]&.to_i || @recipe.prep_time,
+      cook_time: params[:cook_time]&.to_i || @recipe.cook_time,
+      servings: params[:servings]&.to_i || @recipe.servings,
+      difficulty: params[:difficulty]&.to_i || @recipe.difficulty,
+      rating: params[:rating]&.to_i || @recipe.rating,
       tags: params[:tags] || @recipe.tags,
       category: params[:category] || @recipe.category,
-      rating: params[:rating] || @recipe.rating,
       description: params[:description] || @recipe.description,
       ingredients: params[:ingredients] || @recipe.ingredients
     )
@@ -70,7 +71,7 @@ class RecipesController < ApplicationController
       attach_images(@recipe, replace: true)
       render json: { message: "Recipe updated successfully", recipe: recipe_with_images(@recipe) }, status: :ok
     else
-      render json: { errors: @recipe.errors.full_messages }, status: :unprocessable_entity
+      render json: { errors: @recipe.errors.full_messages }, status: :unprocessable_content
     end
   end
 

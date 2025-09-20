@@ -10,3 +10,5 @@ json.rating recipe.rating
 json.category recipe.category
 json.tags recipe.tags
 json.images recipe.images.map { |img| url_for(img) }
+json.user recipe.user.map { |user|}
+
