@@ -12,7 +12,9 @@ Rails.application.routes.draw do
   delete "/recipes/:id" => "recipes#destroy"
 
 
-    post "/users" => "users#create"
+  post "/users" => "users#create"
+
+  post "/sessions" => "sessions#create"
 
 
 
