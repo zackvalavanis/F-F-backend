@@ -16,6 +16,13 @@ Rails.application.routes.draw do
 
   post "/sessions" => "sessions#create"
 
+  get "/restaurants" => "restaurants#index"
+  get "/restaurants/:id" => "restaurants#show"
+  patch "/restaurants/:id" => "restaurants#update"
+  post "/restaurants" => "restaurants#create"
+  delete "/restaurants/:id" => "restaurants#destroy"
+
+
 
 
   # Defines the root path route ("/")
