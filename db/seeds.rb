@@ -108,3 +108,51 @@ Recipe.create!(
   ingredients: "flour, butter, sugar, brown sugar, eggs, vanilla, chocolate chips, baking soda, salt",
   directions: "1. Preheat oven to 350°F (175°C). 2. Cream butter and sugars. 3. Add eggs and vanilla. 4. Mix in flour, baking soda, and salt. 5. Fold in chocolate chips. 6. Scoop onto baking sheet and bake 10-12 mins. 7. Cool before serving."
 )
+
+# Seed 1
+restaurant = Restaurant.create!(
+  name: "Bella Napoli",
+  price: 3,
+  rating: 9,
+  food_type: "Italian",
+  category: "Fine Dining",
+  description: "Authentic Italian cuisine with fresh pasta and wood-fired pizzas.",
+  phone_number: "312-555-1234",
+  website: "https://bellanapoli.example.com",
+  email: "info@bellanapoli.example.com",
+  address: "123 Main St",
+  city: "Chicago",
+  state: "IL",
+  zip_code: "60601",
+  latitude: 41.8781,
+  longitude: -87.6298,
+  opening_hours: "Mon-Sun 11:00-22:00",
+  delivery_option: false,
+  vegan_friendly: true,
+  kid_friendly: false,
+  parking: "Street"
+)
+
+# Seed 2
+restaurant = Restaurant.create!(
+  name: "Taco Haven",
+  price: 1,
+  rating: 7,
+  food_type: "Mexican",
+  category: "Casual",
+  description: "Quick and delicious tacos, burritos, and quesadillas for lunch or dinner.",
+  phone_number: "312-555-5678",
+  website: "https://tacohaven.example.com",
+  email: "contact@tacohaven.example.com",
+  address: "456 Elm St",
+  city: "Chicago",
+  state: "IL",
+  zip_code: "60605",
+  latitude: 41.8819,
+  longitude: -87.6278,
+  opening_hours: "Mon-Fri 10:00-21:00, Sat-Sun 11:00-22:00",
+  delivery_option: true,
+  vegan_friendly: false,
+  kid_friendly: true,
+  parking: "Garage"
+)
