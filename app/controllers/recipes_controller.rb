@@ -39,7 +39,8 @@ class RecipesController < ApplicationController
       category: params[:category],
       rating: params[:rating].to_i,
       description: params[:description],
-      ingredients: params[:ingredients]
+      ingredients: params[:ingredients],
+      directions: params[:directions]
     )
 
     if @recipe.save
@@ -65,7 +66,8 @@ class RecipesController < ApplicationController
       tags: params[:tags] || @recipe.tags,
       category: params[:category] || @recipe.category,
       description: params[:description] || @recipe.description,
-      ingredients: params[:ingredients] || @recipe.ingredients
+      ingredients: params[:ingredients] || @recipe.ingredients, 
+      directions: params[:directions] || @recipe.directions
     )
       # Replace images if new ones are provided
       attach_images(@recipe, replace: true)

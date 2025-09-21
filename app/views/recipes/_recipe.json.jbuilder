@@ -9,6 +9,7 @@ json.difficulty recipe.difficulty
 json.rating recipe.rating
 json.category recipe.category
 json.tags recipe.tags
+json.directins recipe.directions
 json.images recipe.images.map { |img| url_for(img) }
 json.user recipe.user.map { |user|}
 
