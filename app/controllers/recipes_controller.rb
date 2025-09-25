@@ -1,3 +1,6 @@
+require 'openai'
+require 'json'
+
 class RecipesController < ApplicationController
   include Rails.application.routes.url_helpers
   skip_before_action :verify_authenticity_token
@@ -105,5 +108,14 @@ class RecipesController < ApplicationController
         content_type: img.content_type
       )
     end
+  end
+
+
+
+
+  # ai generation of recipe
+  def generate_from_ingredients 
+    ingredients = params[:ingredients]
+    
   end
 end

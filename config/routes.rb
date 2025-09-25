@@ -5,17 +5,23 @@ Rails.application.routes.draw do
   # Can be used by load balancers and uptime monitors to verify that the app is live.
   get "up" => "rails/health#show", as: :rails_health_check
 
+  # Recipes Routes
   get "/recipes" => "recipes#index"
   get "/recipes/:id" => "recipes#show"
   patch "/recipes/:id" => "recipes#update"
   post "/recipes" => "recipes#create"
   delete "/recipes/:id" => "recipes#destroy"
 
+  # Ai generate Recipes Routes
+  post "/recipes/generate_from_ingredients" => "recipes#generate_from_ingredients"
 
+  # User Routes
   post "/users" => "users#create"
 
+  # Sessions
   post "/sessions" => "sessions#create"
 
+  # restaurant Routes
   get "/restaurants" => "restaurants#index"
   get "/restaurants/:id" => "restaurants#show"
   patch "/restaurants/:id" => "restaurants#update"
