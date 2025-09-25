@@ -91,8 +91,6 @@ class RecipesController < ApplicationController
     end
   end
 
-  private 
-
   # Handles attaching images with correct content type
   def attach_images(recipe, replace: false)
     return unless params[:images].present?
@@ -110,99 +108,77 @@ class RecipesController < ApplicationController
     end
   end
 
-
-
-
   # ai generation of recipe
-  def generate_from_ingredients 
+  def generate_from_ingredients
     ingredients = params[:ingredients]
-    unless ingredients.is_a?(Array) && ingredients.any? 
-      return render json: { error: 'Provide an ingredients array in the request body'}, status: :bad_request
+    unless ingredients.is_a?(Array) && ingredients.any?
+      return render json: { error: 'Provide an ingredients array in the request body' }, status: :bad_request
     end
-
+  
     diet = params[:diet]
     servings = params[:servings].to_i
-    save_to_db = Active::Type::Boolean.new.cast(params[:save])
-
+    save_to_db = ActiveModel::Type::Boolean.new.cast(params[:save])
+  
     prompt = build_recipe_prompt(ingredients, diet: diet, servings: servings)
-
-    begin 
-      client = OpenAI::Client.new(access_token: ENV.fetch("OPEN_API_KEY"))
-      response = client.chat(
-        parameters: {
-          model: "gpt-4o-mini",
-          messages: [
-            {role: 'system', content: prompt[:system]}, 
-            {role: 'user', content: prompt[:user]}
-          ], 
-          temperature: 0.2,
-          max_tokens: 800
-        }
-      )
+    openai = OpenaiService.new
+  
+    raw = nil
+    begin
+      raw = openai.chat_system_user(prompt[:system], prompt[:user], model: "gpt-4o-mini", temperature: 0.2, max_tokens: 800)
     rescue => e
-      Rails.logger.error("OpenAI client error; #{e.class} #{e.message}")
-      return render json: { error: "LLM request failed."}, status: :bad_gateway
-    end 
-
-    raw = response.dig("choices", 0, "message", "content")
+      Rails.logger.error("OpenAI client error: #{e.class} #{e.message}")
+      return render json: { error: "LLM request failed." }, status: :bad_gateway
+    end
+  
     parsed = extract_json_from_text(raw)
-
+  
+    # Retry if initial parse fails
     if parsed.nil?
-      Rails.logger.info("initial parse failed, retrying with stricter JSON-only instruction")
-      retry_prompt = { 
-        system: prompt[:system], 
-        user: "ONLY output valid JSON (no explaination)." + prompt[:user]
-      }
-
-      begin 
-        retry_resp = client.chat(
-          parameters: {
-            model: "gpt-4o-mini",
-            messages: [
-              { role: "system", content: retry_prompt[:system] },
-              { role: "user", content: retry_prompt[:user] }
-            ],
-            temperature: 0.0,
-            max_tokens: 800
-          }
-        )
-        raw2 = retry_resp.dig("choices", 0, "message", "content")
+      Rails.logger.info("Initial parse failed, retrying with stricter JSON-only instruction")
+      retry_prompt_user = "ONLY output valid JSON (no explanation). #{prompt[:user]}"
+  
+      begin
+        raw2 = openai.chat_system_user(prompt[:system], retry_prompt_user, model: "gpt-4o-mini", temperature: 0.0, max_tokens: 800)
         parsed = extract_json_from_text(raw2)
       rescue => e
         Rails.logger.error("OpenAI retry error: #{e.class} #{e.message}")
       end
     end
-
+  
     unless parsed
       return render json: { error: "Could not parse recipe JSON from LLM response", raw: raw }, status: :unprocessable_entity
     end
-
-    recipe_attrs = { 
-      title: parsed["title"] || parsed[:title] || "AI-generated recipe",
-      prep_time: parsed["prep_minutes"] || parsed["prep_minutes"] || 0,
-      cook_time: parsed["cook_minutes"] || parsed["cook_minutes"] || parsed["total_minutes"] || 0,
-      servings: parsed["servings"] || nil,
+  
+    # Normalize recipe
+    recipe_attrs = {
+      title: parsed["title"] || "AI-generated recipe",
+      prep_time: parsed["prep_minutes"] || 10,    # default to 10
+      cook_time: parsed["cook_minutes"] || parsed["total_minutes"] || 10,
+      servings: parsed["servings"] || 1,
       tags: parsed["tags"] || [],
-      category: parsed["category"] || nil,
+      category: parsed["category"] || "Uncategorized",  # default
+      difficulty: parsed["difficulty"] || 1,            # default number
+      rating: parsed["rating"] || 1,                    # default number
       description: parsed["notes"] || parsed["description"] || nil,
-      # store ingredients/directions in a simple text/array form depending on your schema
       ingredients: (parsed["ingredients"] || []).map { |i| "#{i['quantity'] || ''} #{i['name']}".strip },
       directions: parsed["steps"] || []
     }
-
+    
+  
     if save_to_db
-      # You may want to set user properly; I left user_id: 1 like your create method
-      new_recipe = Recipe.new(recipe_attrs.merge(user_id: 1))
+      new_recipe = Recipe.new(recipe_attrs.merge(user_id: 1)) # TODO: replace user_id with current_user.id
       if new_recipe.save
         render json: { message: "AI recipe created", recipe: recipe_with_images(new_recipe) }, status: :created
       else
         render json: { error: "Failed to save recipe", details: new_recipe.errors.full_messages }, status: :unprocessable_entity
       end
     else
-      # just return the parsed JSON (and the normalized attrs for convenience)
       render json: { generated: parsed, normalized: recipe_attrs }, status: :ok
     end
   end
+  
+
+  
   private
 
 
@@ -259,7 +235,7 @@ class RecipesController < ApplicationController
     end
   end
 
-  # unchanged image attach helper
+  # unchanged image attach helpera
   def attach_images(recipe, replace: false)
     return unless params[:images].present?
 

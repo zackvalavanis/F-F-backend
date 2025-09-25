@@ -69,4 +69,5 @@ end
 gem 'rack-cors', require: 'rack/cors'
 
 gem 'jwt'
-gem 'openai'
+gem 'ruby-openai', '~> 8.3.0'
+gem 'dotenv-rails', groups: [:development, :production]
