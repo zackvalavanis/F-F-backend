@@ -111,6 +111,11 @@ class RecipesController < ApplicationController
   # ai generation of recipe
   def generate_from_ingredients
     ingredients = params[:ingredients]
+    category = params[:category]
+
+    allowed_categories = %w[breakfast lunch dinner dessert]
+    category = allowed_categories.include?(category&.downcase) ? category.downcase : nil
+
     unless ingredients.is_a?(Array) && ingredients.any?
       return render json: { error: 'Provide an ingredients array in the request body' }, status: :bad_request
     end
@@ -119,7 +124,7 @@ class RecipesController < ApplicationController
     servings = params[:servings].to_i
     save_to_db = ActiveModel::Type::Boolean.new.cast(params[:save])
   
-    prompt = build_recipe_prompt(ingredients, diet: diet, servings: servings)
+    prompt = build_recipe_prompt(ingredients, diet: diet, servings: servings, category: category)
     openai = OpenaiService.new
   
     raw = nil
@@ -156,7 +161,7 @@ class RecipesController < ApplicationController
       cook_time: parsed["cook_minutes"] || parsed["total_minutes"] || 10,
       servings: parsed["servings"] || 1,
       tags: parsed["tags"] || [],
-      category: parsed["category"] || "Uncategorized",  # default
+      category: category || parsed["category"] || "Uncategorized",  # default
       difficulty: parsed["difficulty"] || 1,            # default number
       rating: parsed["rating"] || 1,                    # default number
       description: parsed["notes"] || parsed["description"] || nil,
@@ -183,9 +188,10 @@ class RecipesController < ApplicationController
 
 
   # Creates a two-part prompt: system instructions & user input
-  def build_recipe_prompt(ingredients, diet: nil, servings: nil)
+  def build_recipe_prompt(ingredients, diet: nil, servings: nil, category: nil)
     schema = {
       "title" => "string",
+      "category" => "string",
       "servings" => "number or null",
       "total_minutes" => "number or null",
       "ingredients" => [{"name"=>"string", "quantity"=>"string or null", "notes"=>"string or null"}],
