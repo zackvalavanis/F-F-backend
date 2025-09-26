@@ -32,7 +32,7 @@
 #   directions: ''
 # )
 
-user = User.first
+# user = User.first
 
 # Recipe.create!(
 #   user: user,
@@ -106,7 +106,7 @@ user = User.first
 #   rating: 6,
 #   description: "Classic chewy chocolate chip cookies with a golden brown edge.",
 #   ingredients: "flour, butter, sugar, brown sugar, eggs, vanilla, chocolate chips, baking soda, salt",
-#   directions: "1. Preheat oven to 350°F (175°C). 2. Cream butter and sugars. 3. Add eggs and vanilla. 4. Mix in flour, baking soda, and salt. 5. Fold in chocolate chips. 6. Scoop onto baking sheet and bake 10-12 mins. 7. Cool before serving."
+#   directions: "Preheat oven to 350°F (175°C). Cream butter and sugars. Add eggs and vanilla. Mix in flour, baking soda, and salt. Fold in chocolate chips. Scoop onto baking sheet and bake 10-12 mins. Cool before serving."
 # )
 
 # # Seed 1
@@ -158,17 +158,17 @@ user = User.first
 # )
 
 
-Recipe.create!(
-  user: user,
-  title: "potatoes",
-  prep_time: 10,
-  cook_time: 10,
-  servings: 2,
-  difficulty: 1,
-  tags: "Vegetarian, Quick, Healthy, Dinner",
-  category: "Dinner",
-  rating: 10,
-  description: "A colorful mix of vegetables sautéed in a savory soy garlic sauce.",
-  ingredients: "broccoli, bell peppers, carrots, soy sauce, garlic, olive oil",
-  directions: "1. Heat olive oil in a pan. 2. Add garlic and sauté 1 min. 3. Add vegetables and stir fry 5-7 mins. 4. Add soy sauce and cook 2 more mins. 5. Serve over rice or noodles."
-)
+# Recipe.create!(
+#   user: user,
+#   title: "potatoes",
+#   prep_time: 10,
+#   cook_time: 10,
+#   servings: 2,
+#   difficulty: 1,
+#   tags: "Vegetarian, Quick, Healthy, Dinner",
+#   category: "Dinner",
+#   rating: 10,
+#   description: "A colorful mix of vegetables sautéed in a savory soy garlic sauce.",
+#   ingredients: "broccoli, bell peppers, carrots, soy sauce, garlic, olive oil",
+#   directions: "Heat olive oil in a pan. Add garlic and sauté 1 min. Add vegetables and stir fry 5-7 mins. Add soy sauce and cook 2 more mins. Serve over rice or noodles."
+# )

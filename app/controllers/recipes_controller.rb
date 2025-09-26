@@ -31,20 +31,7 @@ class RecipesController < ApplicationController
 
   # POST /recipes
   def create
-    @recipe = Recipe.new(
-      user_id: 1,
-      title: params[:title],
-      prep_time: params[:prep_time].to_i,
-      cook_time: params[:cook_time].to_i,
-      servings: params[:servings]&.to_i,
-      difficulty: params[:difficulty].to_i,
-      tags: params[:tags],
-      category: params[:category],
-      rating: params[:rating].to_i,
-      description: params[:description],
-      ingredients: params[:ingredients],
-      directions: params[:directions]
-    )
+    @recipe = Recipe.new(normalize_recipe(params.to_unsafe_h, category: params[:category], user_id: 1))
 
     if @recipe.save
       attach_images(@recipe)
@@ -72,7 +59,6 @@ class RecipesController < ApplicationController
       ingredients: params[:ingredients] || @recipe.ingredients, 
       directions: params[:directions] || @recipe.directions
     )
-      # Replace images if new ones are provided
       attach_images(@recipe, replace: true)
       render json: { message: "Recipe updated successfully", recipe: recipe_with_images(@recipe) }, status: :ok
     else
@@ -91,57 +77,36 @@ class RecipesController < ApplicationController
     end
   end
 
-  # Handles attaching images with correct content type
-  def attach_images(recipe, replace: false)
-    return unless params[:images].present?
-
-    recipe.images.purge if replace
-
-    # Support multiple image uploads
-    images = params[:images].is_a?(Array) ? params[:images] : [params[:images]]
-    images.each do |img|
-      recipe.images.attach(
-        io: img.tempfile,
-        filename: img.original_filename,
-        content_type: img.content_type
-      )
-    end
-  end
-
-  # ai generation of recipe
+  # AI recipe generation
   def generate_from_ingredients
     ingredients = params[:ingredients]
     category = params[:category]
-
     allowed_categories = %w[breakfast lunch dinner dessert]
     category = allowed_categories.include?(category&.downcase) ? category.downcase : nil
 
     unless ingredients.is_a?(Array) && ingredients.any?
       return render json: { error: 'Provide an ingredients array in the request body' }, status: :bad_request
     end
-  
+
     diet = params[:diet]
     servings = params[:servings].to_i
     save_to_db = ActiveModel::Type::Boolean.new.cast(params[:save])
-  
+
     prompt = build_recipe_prompt(ingredients, diet: diet, servings: servings, category: category)
     openai = OpenaiService.new
-  
-    raw = nil
-    begin
-      raw = openai.chat_system_user(prompt[:system], prompt[:user], model: "gpt-4o-mini", temperature: 0.2, max_tokens: 800)
+
+    raw = begin
+      openai.chat_system_user(prompt[:system], prompt[:user], model: "gpt-4o-mini", temperature: 0.2, max_tokens: 800)
     rescue => e
       Rails.logger.error("OpenAI client error: #{e.class} #{e.message}")
       return render json: { error: "LLM request failed." }, status: :bad_gateway
     end
-  
+
     parsed = extract_json_from_text(raw)
-  
-    # Retry if initial parse fails
+
     if parsed.nil?
       Rails.logger.info("Initial parse failed, retrying with stricter JSON-only instruction")
       retry_prompt_user = "ONLY output valid JSON (no explanation). #{prompt[:user]}"
-  
       begin
         raw2 = openai.chat_system_user(prompt[:system], retry_prompt_user, model: "gpt-4o-mini", temperature: 0.0, max_tokens: 800)
         parsed = extract_json_from_text(raw2)
@@ -149,29 +114,16 @@ class RecipesController < ApplicationController
         Rails.logger.error("OpenAI retry error: #{e.class} #{e.message}")
       end
     end
-  
+
     unless parsed
       return render json: { error: "Could not parse recipe JSON from LLM response", raw: raw }, status: :unprocessable_entity
     end
-  
-    # Normalize recipe
-    recipe_attrs = {
-      title: parsed["title"] || "AI-generated recipe",
-      prep_time: parsed["prep_minutes"] || 10,    # default to 10
-      cook_time: parsed["cook_minutes"] || parsed["total_minutes"] || 10,
-      servings: parsed["servings"] || 1,
-      tags: parsed["tags"] || [],
-      category: category || parsed["category"] || "Uncategorized",  # default
-      difficulty: parsed["difficulty"] || 1,            # default number
-      rating: parsed["rating"] || 1,                    # default number
-      description: parsed["notes"] || parsed["description"] || nil,
-      ingredients: (parsed["ingredients"] || []).map { |i| "#{i['quantity'] || ''} #{i['name']}".strip },
-      directions: parsed["steps"] || []
-    }
-    
-  
+
+    # Normalize AI response to match `create` structure
+    recipe_attrs = normalize_recipe(parsed, category: category, user_id: 1)
+
     if save_to_db
-      new_recipe = Recipe.new(recipe_attrs.merge(user_id: 1)) # TODO: replace user_id with current_user.id
+      new_recipe = Recipe.new(recipe_attrs)
       if new_recipe.save
         render json: { message: "AI recipe created", recipe: recipe_with_images(new_recipe) }, status: :created
       else
@@ -181,13 +133,47 @@ class RecipesController < ApplicationController
       render json: { generated: parsed, normalized: recipe_attrs }, status: :ok
     end
   end
-  
 
-  
   private
 
-
-  # Creates a two-part prompt: system instructions & user input
+  # Normalize a recipe hash to the structure used in `create`
+  def normalize_recipe(source, category: nil, user_id: 1)
+    # Ingredients as array
+    ingredients_list = (source["ingredients"] || source[:ingredients] || []).map do |i|
+      if i.is_a?(Hash)
+        "#{i['quantity'] || ''} #{i['name']}".strip
+      else
+        i.to_s.strip
+      end
+    end.join(", ")
+  
+    # Directions as array
+    directions_list = (source["steps"] || source[:directions] || []).map(&:strip)
+  
+    # Tags as comma-separated string
+    tags_text = (source["tags"] || source[:tags] || []).join(", ")
+  
+    # Capitalize category
+    formatted_category = (category || source["category"] || source[:category] || "Uncategorized").to_s.capitalize
+  
+    {
+      user_id: user_id,
+      title: source["title"] || source[:title] || "AI-generated recipe",
+      prep_time: (source["prep_minutes"] || source[:prep_time] || 10).to_i,
+      cook_time: (source["cook_minutes"] || source["total_minutes"] || source[:cook_time] || 10).to_i,
+      servings: (source["servings"] || source[:servings] || 1).to_i,
+      difficulty: (source["difficulty"] || 1).to_i,
+      rating: (source["rating"] || 1).to_i,
+      tags: tags_text,
+      category: formatted_category,
+      description: source["description"].presence || source["notes"].presence || "A delicious dish created with your ingredients.",
+      ingredients: ingredients_list,    # <-- array
+      directions: directions_list.join(". ").strip       # <-- array
+    }
+  end
+  
+  
+  # Build system + user prompt for AI
   def build_recipe_prompt(ingredients, diet: nil, servings: nil, category: nil)
     schema = {
       "title" => "string",
@@ -208,18 +194,19 @@ class RecipesController < ApplicationController
       - Use null for unknown numeric values.
       - If you can't determine a quantity, set it to null.
       - Keep steps short and numbered.
-      - If multiple possible recipes exist, prefer simple, achievable instructions.
+      - Prefer simple, achievable instructions.
     SYS
 
-    user = "Ingredients: [" + ingredients.map { |i| i.to_s }.join(", ") + "]."
+    user = "Ingredients: [" + ingredients.map(&:to_s).join(", ") + "]."
     user += " Dietary preference: #{diet}." if diet.present?
     user += " Target servings: #{servings}." if servings.present?
+    user += " Category: #{category}." if category.present?
     user += " Build a recipe using those ingredients where possible. Output JSON only."
 
     { system: system, user: user }
   end
 
-  # Attempt to extract the first JSON object from a text blob
+  # Extract JSON from raw AI text
   def extract_json_from_text(text)
     return nil unless text.is_a?(String)
 
@@ -231,8 +218,7 @@ class RecipesController < ApplicationController
     begin
       JSON.parse(candidate)
     rescue JSON::ParserError
-      # attempt quick fixes for common LLM formatting issues
-      fixed = candidate.gsub("=>", ":").gsub(/([\w-]+):\s*(\w+)/, '"\1": "\2"') # conservative attempt
+      fixed = candidate.gsub("=>", ":").gsub(/([\w-]+):\s*(\w+)/, '"\1": "\2"')
       begin
         JSON.parse(fixed)
       rescue JSON::ParserError
@@ -241,12 +227,11 @@ class RecipesController < ApplicationController
     end
   end
 
-  # unchanged image attach helpera
+  # Attach images to a recipe
   def attach_images(recipe, replace: false)
     return unless params[:images].present?
 
     recipe.images.purge if replace
-
     images = params[:images].is_a?(Array) ? params[:images] : [params[:images]]
     images.each do |img|
       recipe.images.attach(
@@ -257,4 +242,3 @@ class RecipesController < ApplicationController
     end
   end
 end
-
