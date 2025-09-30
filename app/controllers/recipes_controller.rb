@@ -127,6 +127,7 @@ class RecipesController < ApplicationController
       if new_recipe.save
         render json: { message: "AI recipe created", recipe: recipe_with_images(new_recipe) }, status: :created
       else
+        Rails.logger.error("Failed to save recipe: #{new_recipe.errors.full_messages}")
         render json: { error: "Failed to save recipe", details: new_recipe.errors.full_messages }, status: :unprocessable_entity
       end
     else
