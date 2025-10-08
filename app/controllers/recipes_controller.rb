@@ -1,4 +1,5 @@
 require 'openai'
+require 'open-uri'
 require 'json'
 
 class RecipesController < ApplicationController
@@ -125,6 +126,7 @@ class RecipesController < ApplicationController
     if save_to_db
       new_recipe = Recipe.new(recipe_attrs)
       if new_recipe.save
+        generate_recipe_image(new_recipe)
         render json: { message: "AI recipe created", recipe: recipe_with_images(new_recipe) }, status: :created
       else
         Rails.logger.error("Failed to save recipe: #{new_recipe.errors.full_messages}")
@@ -226,6 +228,18 @@ class RecipesController < ApplicationController
         nil
       end
     end
+  end
+
+  def generate_recipe_image(recipe)
+    prompt = "A plate of #{recipe.title} with ingredients: #{recipe.ingredients}. Professional food photography style."
+    
+    image_url = OpenaiService.new.generate_image(prompt, size: "512x512") 
+  
+    return unless image_url
+  
+    # Attach image via ActiveStorage
+    file = URI.open(image_url)
+    recipe.images.attach(io: file, filename: "#{recipe.title.parameterize}.png", content_type: 'image/png')
   end
 
   # Attach images to a recipe

@@ -1,3 +1,6 @@
+require 'openai'
+require 'open-uri'
+
 class OpenaiService
   def initialize
     @client = OpenAI::Client.new(access_token: ENV['OPENAI_API_KEY'])
@@ -16,5 +19,15 @@ class OpenaiService
       }
     )
     response.dig("choices", 0, "message", "content")
+  end
+
+  def generate_image(prompt, size: "512x512")
+    response = @client.images.generate(
+      parameters: { 
+        prompt: prompt, 
+        size: size
+      }
+    )
+    response.dig("data", 0, "url")
   end
 end
