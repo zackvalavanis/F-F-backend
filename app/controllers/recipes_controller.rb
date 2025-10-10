@@ -157,7 +157,7 @@ class RecipesController < ApplicationController
     tags_text = (source["tags"] || source[:tags] || []).join(", ")
   
     # Capitalize category
-    formatted_category = (category || source["category"] || source[:category] || "Uncategorized").to_s.capitalize
+    formatted_category = category.present? ? category.capitalize : (source["category"] || source[:category] || "Uncategorized").to_s.capitalize
   
     {
       user_id: user_id,
