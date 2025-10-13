@@ -172,3 +172,24 @@
 #   ingredients: "broccoli, bell peppers, carrots, soy sauce, garlic, olive oil",
 #   directions: "Heat olive oil in a pan. Add garlic and sauté 1 min. Add vegetables and stir fry 5-7 mins. Add soy sauce and cook 2 more mins. Serve over rice or noodles."
 # )
+
+file_path = Rails.root.join("app/assets/images/istockphoto-517188688-612x612.jpg")
+
+if File.exist?(file_path)
+  restaurant = Restaurant.first
+  restaurant.images.attach(
+    io: File.open(file_path),
+    filename: "istockphoto-517188688-612x612.jpg",
+    content_type: "image/jpeg"
+  )
+else
+  puts "File not found: #{file_path}"
+end
+
+
+# restaurant = Restaurant.second
+# restaurant.images.attach(
+#   io: File.open(Rails.root.join("app/assets/images/taco.jpg")),
+#   filename: "taco.jpg",
+#   content_type: "image/jpeg"
+# )
