@@ -13,11 +13,9 @@ Rails.application.routes.draw do
   delete "/recipes/:id" => "recipes#destroy"
 
   # Ratings routes 
-  get "/ratings" => "ratings#index"
-  get "/ratings/:id" => "ratings#show"
-  patch "/ratings/:id" => "ratings#update"
-  post "/ratings" => "ratings#create"
-  delete "/ratings/:id" => "ratings#destroy"
+  resources :recipes do
+    resources :ratings, only: [:create, :index]
+  end
 
   # Ai generate Recipes Routes
   post "/recipes/generate_from_ingredients" => "recipes#generate_from_ingredients"
