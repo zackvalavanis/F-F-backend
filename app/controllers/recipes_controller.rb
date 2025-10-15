@@ -6,75 +6,100 @@ class RecipesController < ApplicationController
   include Rails.application.routes.url_helpers
   skip_before_action :verify_authenticity_token
 
-  # Helper method to serialize a recipe with image URLs
+  # Serialize a recipe with image URLs, user info, and average rating
   def recipe_with_images(recipe)
     recipe.as_json.merge(
       images: recipe.images.map { |img| url_for(img) },
-      user: recipe.user.present? ? { id: recipe.user.id, name: recipe.user.name, email: recipe.user.email } : nil
+      user: recipe.user.present? ? {
+        id: recipe.user.id,
+        name: recipe.user.name,
+        email: recipe.user.email
+      } : nil,
+      average_rating: recipe.average_rating
     )
   end
 
   # GET /recipes
   def index
-    @recipes = Recipe.all
-    render json: @recipes.map { |recipe| recipe_with_images(recipe) }
+    recipes = Recipe.includes(:user, :ratings, images_attachments: :blob)
+    render json: recipes.map { |r| recipe_with_images(r) }
   end
 
   # GET /recipes/:id
   def show
-    @recipe = Recipe.find_by(id: params[:id])
-    if @recipe
-      render json: recipe_with_images(@recipe)
+    recipe = Recipe.find_by(id: params[:id])
+    if recipe
+      render json: recipe_with_images(recipe)
     else
-      render json: { message: 'The recipe does not exist' }, status: :not_found
+      render json: { error: 'Recipe not found' }, status: :not_found
     end
   end
 
   # POST /recipes
   def create
-    @recipe = Recipe.new(normalize_recipe(params.to_unsafe_h, category: params[:category], user_id: 1))
+    recipe = Recipe.new(normalize_recipe(params.to_unsafe_h, category: params[:category], user_id: 1))
 
-    if @recipe.save
-      attach_images(@recipe)
-      render json: { message: "Recipe created successfully", recipe: recipe_with_images(@recipe) }, status: :created
+    if recipe.save
+      attach_images(recipe)
+      render json: { message: 'Recipe created successfully', recipe: recipe_with_images(recipe) }, status: :created
     else
-      render json: { errors: @recipe.errors.full_messages }, status: :unprocessable_content
+      render json: { errors: recipe.errors.full_messages }, status: :unprocessable_entity
     end
   end
 
   # PATCH/PUT /recipes/:id
   def update
-    @recipe = Recipe.find_by(id: params[:id])
-    return render json: { error: "Recipe not found" }, status: :not_found unless @recipe
+    recipe = Recipe.find_by(id: params[:id])
+    return render json: { error: 'Recipe not found' }, status: :not_found unless recipe
 
-    if @recipe.update(
-      title: params[:title] || @recipe.title,
-      prep_time: params[:prep_time]&.to_i || @recipe.prep_time,
-      cook_time: params[:cook_time]&.to_i || @recipe.cook_time,
-      servings: params[:servings]&.to_i || @recipe.servings,
-      difficulty: params[:difficulty]&.to_i || @recipe.difficulty,
-      rating: params[:rating]&.to_i || @recipe.rating,
-      tags: params[:tags] || @recipe.tags,
-      category: params[:category] || @recipe.category,
-      description: params[:description] || @recipe.description,
-      ingredients: params[:ingredients] || @recipe.ingredients, 
-      directions: params[:directions] || @recipe.directions
+    if recipe.update(
+      title: params[:title] || recipe.title,
+      prep_time: params[:prep_time]&.to_i || recipe.prep_time,
+      cook_time: params[:cook_time]&.to_i || recipe.cook_time,
+      servings: params[:servings]&.to_i || recipe.servings,
+      difficulty: params[:difficulty]&.to_i || recipe.difficulty,
+      tags: params[:tags] || recipe.tags,
+      category: params[:category] || recipe.category,
+      description: params[:description] || recipe.description,
+      ingredients: params[:ingredients] || recipe.ingredients,
+      directions: params[:directions] || recipe.directions
     )
-      attach_images(@recipe, replace: true)
-      render json: { message: "Recipe updated successfully", recipe: recipe_with_images(@recipe) }, status: :ok
+      attach_images(recipe, replace: true)
+      render json: { message: 'Recipe updated successfully', recipe: recipe_with_images(recipe) }, status: :ok
     else
-      render json: { errors: @recipe.errors.full_messages }, status: :unprocessable_content
+      render json: { errors: recipe.errors.full_messages }, status: :unprocessable_entity
     end
   end
 
   # DELETE /recipes/:id
   def destroy
-    @recipe = Recipe.find_by(id: params[:id])
-    if @recipe.nil?
-      render json: { error: "Recipe not found" }, status: :not_found
+    recipe = Recipe.find_by(id: params[:id])
+    return render json: { error: 'Recipe not found' }, status: :not_found unless recipe
+
+    recipe.destroy
+    render json: { message: 'Recipe deleted successfully' }, status: :ok
+  end
+
+  # POST /recipes/:id/rate
+  def rate
+    recipe = Recipe.find_by(id: params[:id])
+    return render json: { error: 'Recipe not found' }, status: :not_found unless recipe
+
+    user = User.find_by(id: params[:user_id])
+    return render json: { error: 'User not found' }, status: :not_found unless user
+
+    rating_value = params[:value].to_i.clamp(1, 10)
+    rating = Rating.find_or_initialize_by(user: user, recipe: recipe)
+    rating.value = rating_value
+
+    if rating.save
+      render json: {
+        message: 'Rating saved successfully',
+        average_rating: recipe.average_rating,
+        user_rating: rating_value
+      }, status: :ok
     else
-      @recipe.destroy
-      render json: { message: "Recipe deleted successfully" }, status: :ok
+      render json: { errors: rating.errors.full_messages }, status: :unprocessable_entity
     end
   end
 
@@ -96,41 +121,28 @@ class RecipesController < ApplicationController
     prompt = build_recipe_prompt(ingredients, diet: diet, servings: servings, category: category)
     openai = OpenaiService.new
 
-    raw = begin
-      openai.chat_system_user(prompt[:system], prompt[:user], model: "gpt-4o-mini", temperature: 0.2, max_tokens: 800)
-    rescue => e
-      Rails.logger.error("OpenAI client error: #{e.class} #{e.message}")
-      return render json: { error: "LLM request failed." }, status: :bad_gateway
-    end
-
+    raw = openai.chat_system_user(prompt[:system], prompt[:user], model: "gpt-4o-mini", temperature: 0.2, max_tokens: 800)
     parsed = extract_json_from_text(raw)
 
-    if parsed.nil?
-      Rails.logger.info("Initial parse failed, retrying with stricter JSON-only instruction")
+    unless parsed
       retry_prompt_user = "ONLY output valid JSON (no explanation). #{prompt[:user]}"
-      begin
-        raw2 = openai.chat_system_user(prompt[:system], retry_prompt_user, model: "gpt-4o-mini", temperature: 0.0, max_tokens: 800)
-        parsed = extract_json_from_text(raw2)
-      rescue => e
-        Rails.logger.error("OpenAI retry error: #{e.class} #{e.message}")
-      end
+      raw2 = openai.chat_system_user(prompt[:system], retry_prompt_user, model: "gpt-4o-mini", temperature: 0.0, max_tokens: 800)
+      parsed = extract_json_from_text(raw2)
     end
 
     unless parsed
-      return render json: { error: "Could not parse recipe JSON from LLM response", raw: raw }, status: :unprocessable_entity
+      return render json: { error: 'Could not parse recipe JSON from LLM response', raw: raw }, status: :unprocessable_entity
     end
 
-    # Normalize AI response to match `create` structure
     recipe_attrs = normalize_recipe(parsed, category: category, user_id: 1)
 
     if save_to_db
       new_recipe = Recipe.new(recipe_attrs)
       if new_recipe.save
         generate_recipe_image(new_recipe)
-        render json: { message: "AI recipe created", recipe: recipe_with_images(new_recipe) }, status: :created
+        render json: { message: 'AI recipe created', recipe: recipe_with_images(new_recipe) }, status: :created
       else
-        Rails.logger.error("Failed to save recipe: #{new_recipe.errors.full_messages}")
-        render json: { error: "Failed to save recipe", details: new_recipe.errors.full_messages }, status: :unprocessable_entity
+        render json: { error: 'Failed to save recipe', details: new_recipe.errors.full_messages }, status: :unprocessable_entity
       end
     else
       render json: { generated: parsed, normalized: recipe_attrs }, status: :ok
@@ -139,9 +151,7 @@ class RecipesController < ApplicationController
 
   private
 
-  # Normalize a recipe hash to the structure used in `create`
   def normalize_recipe(source, category: nil, user_id: 1)
-    # Ingredients as array
     ingredients_list = (source["ingredients"] || source[:ingredients] || []).map do |i|
       if i.is_a?(Hash)
         "#{i['quantity'] || ''} #{i['name']}".strip
@@ -149,16 +159,11 @@ class RecipesController < ApplicationController
         i.to_s.strip
       end
     end.join(", ")
-  
-    # Directions as array
+
     directions_list = (source["steps"] || source[:directions] || []).map(&:strip)
-  
-    # Tags as comma-separated string
     tags_text = (source["tags"] || source[:tags] || []).join(", ")
-  
-    # Capitalize category
     formatted_category = category.present? ? category.capitalize : (source["category"] || source[:category] || "Uncategorized").to_s.capitalize
-  
+
     {
       user_id: user_id,
       title: source["title"] || source[:title] || "AI-generated recipe",
@@ -166,27 +171,23 @@ class RecipesController < ApplicationController
       cook_time: (source["cook_minutes"] || source["total_minutes"] || source[:cook_time] || 10).to_i,
       servings: (source["servings"] || source[:servings] || 1).to_i,
       difficulty: (source["difficulty"] || 1).to_i,
-      rating: (source["rating"] || 1).to_i,
       tags: tags_text,
       category: formatted_category,
       description: source["description"].presence || source["notes"].presence || "A delicious dish created with your ingredients.",
-      ingredients: ingredients_list,    # <-- array
-      directions: directions_list.join(". ").strip       # <-- array
+      ingredients: ingredients_list,
+      directions: directions_list.join(". ").strip
     }
   end
-  
-  
-  # Build system + user prompt for AI
+
   def build_recipe_prompt(ingredients, diet: nil, servings: nil, category: nil)
     schema = {
       "title" => "string",
       "category" => "string",
       "servings" => "number or null",
       "total_minutes" => "number or null",
-      "ingredients" => [{"name"=>"string", "quantity"=>"string or null", "notes"=>"string or null"}],
+      "ingredients" => [{"name" => "string", "quantity" => "string or null"}],
       "steps" => ["string"],
       "tags" => ["string"],
-      "substitutions" => [{"ingredient"=>"string", "suggestions"=>["string"]}],
       "notes" => "string or null"
     }
 
@@ -200,49 +201,36 @@ class RecipesController < ApplicationController
       - Prefer simple, achievable instructions.
     SYS
 
-    user = "Ingredients: [" + ingredients.map(&:to_s).join(", ") + "]."
+    user = "Ingredients: [#{ingredients.join(', ')}]."
     user += " Dietary preference: #{diet}." if diet.present?
     user += " Target servings: #{servings}." if servings.present?
     user += " Category: #{category}." if category.present?
     user += " Build a recipe using those ingredients where possible. Output JSON only."
 
-    { system: system, user: user }
+    { system:, user: }
   end
 
-  # Extract JSON from raw AI text
   def extract_json_from_text(text)
     return nil unless text.is_a?(String)
-
     first = text.index("{")
     last = text.rindex("}")
     return nil unless first && last && last > first
 
     candidate = text[first..last]
-    begin
-      JSON.parse(candidate)
-    rescue JSON::ParserError
-      fixed = candidate.gsub("=>", ":").gsub(/([\w-]+):\s*(\w+)/, '"\1": "\2"')
-      begin
-        JSON.parse(fixed)
-      rescue JSON::ParserError
-        nil
-      end
-    end
+    JSON.parse(candidate)
+  rescue JSON::ParserError
+    nil
   end
 
   def generate_recipe_image(recipe)
     prompt = "A plate of #{recipe.title} with ingredients: #{recipe.ingredients}. Professional food photography style."
-    
-    image_url = OpenaiService.new.generate_image(prompt, size: "512x512") 
-  
+    image_url = OpenaiService.new.generate_image(prompt, size: "512x512")
     return unless image_url
-  
-    # Attach image via ActiveStorage
+
     file = URI.open(image_url)
     recipe.images.attach(io: file, filename: "#{recipe.title.parameterize}.png", content_type: 'image/png')
   end
 
-  # Attach images to a recipe
   def attach_images(recipe, replace: false)
     return unless params[:images].present?
 

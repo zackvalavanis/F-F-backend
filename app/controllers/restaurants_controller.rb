@@ -11,8 +11,7 @@ class RestaurantsController < ApplicationController
       @restaurants = @restaurants.where(price: params[:price]) if params[:price].present?
       @restaurants = @restaurants.where('rating >= ?', params[:min_rating].to_i) if params[:min_rating].present?
       @restaurants = @restaurants.where(city: params[:city]) if params[:city].present?
-      @restaurants = @restaurants.where(food_type: params[:food_type]) if params[:food_type].present?
-  
+      @restaurants = @restaurants.where('food_type ILIKE ?', "%#{params[:food_type]}%") if params[:food_type].present?
       render :index
     end
   
