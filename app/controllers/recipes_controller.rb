@@ -150,28 +150,30 @@ class RecipesController < ApplicationController
   private
 
   def normalize_recipe(source, category: nil, user_id:)
-    # Convert strings or nil to arrays
+    # Ingredients
     ingredients_array = case source["ingredients"]
                         when String
-                          source["ingredients"].split("\n").map(&:strip)
+                          [source["ingredients"]].reject(&:blank?) # wrap string in array
                         when Array
                           source["ingredients"]
                         else
                           []
                         end
   
+    # Directions
     directions_array = case source["directions"]
                        when String
-                         source["directions"].split("\n").map(&:strip)
+                         [source["directions"]].reject(&:blank?)
                        when Array
                          source["directions"]
                        else
                          []
                        end
   
+    # Tags
     tags_array = case source["tags"]
                  when String
-                   source["tags"].split(",").map(&:strip).reject(&:empty?)
+                   source["tags"].split(",").map(&:strip).reject(&:blank?)
                  when Array
                    source["tags"]
                  else
@@ -179,11 +181,7 @@ class RecipesController < ApplicationController
                  end
   
     ingredients_list = ingredients_array.map do |i|
-      if i.is_a?(Hash)
-        "#{i['quantity'] || ''} #{i['name']}".strip
-      else
-        i.to_s.strip
-      end
+      i.is_a?(Hash) ? "#{i['quantity'] || ''} #{i['name']}".strip : i.to_s.strip
     end.join(", ")
   
     directions_list = directions_array.map(&:strip)
@@ -204,6 +202,7 @@ class RecipesController < ApplicationController
       directions: directions_list.join(". ").strip
     }
   end
+  
   
   
 
