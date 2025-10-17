@@ -150,24 +150,29 @@ class RecipesController < ApplicationController
   private
 
   def normalize_recipe(source, category: nil, user_id:)
-    # Ingredients
-    ingredients_array = if source["ingredients"].is_a?(String)
+    # Convert strings or nil to arrays
+    ingredients_array = case source["ingredients"]
+                        when String
                           source["ingredients"].split("\n").map(&:strip)
+                        when Array
+                          source["ingredients"]
                         else
-                          source["ingredients"] || []
+                          []
                         end
   
-    # Directions
-    directions_array = if source["directions"].is_a?(String)
+    directions_array = case source["directions"]
+                       when String
                          source["directions"].split("\n").map(&:strip)
+                       when Array
+                         source["directions"]
                        else
-                         source["directions"] || []
+                         []
                        end
   
-    # Tags
-    tags_array = if source["tags"].is_a?(String)
+    tags_array = case source["tags"]
+                 when String
                    source["tags"].split(",").map(&:strip).reject(&:empty?)
-                 elsif source["tags"].is_a?(Array)
+                 when Array
                    source["tags"]
                  else
                    []
