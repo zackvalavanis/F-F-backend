@@ -149,12 +149,20 @@ class RecipesController < ApplicationController
 
   private
 
-  # Normalize ingredients and directions safely
   def normalize_recipe(source, category: nil, user_id:)
-    # Convert ingredients string to array if necessary
-    ingredients_raw = source["ingredients"] || source[:ingredients] || ""
-    ingredients_array = ingredients_raw.is_a?(String) ? ingredients_raw.split(/[\n,]+/).map(&:strip) : ingredients_raw
-
+    # Convert ingredients to array if it's a string
+    ingredients_array = if source["ingredients"].is_a?(String)
+                          source["ingredients"].split("\n").map(&:strip)
+                        else
+                          source["ingredients"] || []
+                        end
+  
+    directions_array = if source["directions"].is_a?(String)
+                         source["directions"].split("\n").map(&:strip)
+                       else
+                         source["directions"] || []
+                       end
+  
     ingredients_list = ingredients_array.map do |i|
       if i.is_a?(Hash)
         "#{i['quantity'] || ''} #{i['name']}".strip
@@ -162,31 +170,27 @@ class RecipesController < ApplicationController
         i.to_s.strip
       end
     end.join(", ")
-
-    directions_raw = source["steps"] || source[:directions] || ""
-    directions_array = directions_raw.is_a?(String) ? directions_raw.split(/[\n\.]+/).map(&:strip) : directions_raw
+  
     directions_list = directions_array.map(&:strip)
-
-    tags_raw = source["tags"] || source[:tags] || []
-    tags_array = tags_raw.is_a?(String) ? tags_raw.split(",").map(&:strip) : tags_raw
-    tags_text = tags_array.join(", ")
-
-    formatted_category = category.present? ? category.capitalize : (source["category"] || source[:category] || "Uncategorized").to_s.capitalize
-
+  
+    tags_text = (source["tags"] || []).join(", ")
+    formatted_category = category.present? ? category.capitalize : (source["category"] || "Uncategorized").to_s.capitalize
+  
     {
       user_id: user_id,
-      title: source["title"] || source[:title] || "AI-generated recipe",
-      prep_time: (source["prep_minutes"] || source[:prep_time] || 10).to_i,
-      cook_time: (source["cook_minutes"] || source["total_minutes"] || source[:cook_time] || 10).to_i,
-      servings: (source["servings"] || source[:servings] || 1).to_i,
+      title: source["title"] || "AI-generated recipe",
+      prep_time: (source["prep_time"] || 10).to_i,
+      cook_time: (source["cook_time"] || 10).to_i,
+      servings: (source["servings"] || 1).to_i,
       difficulty: (source["difficulty"] || 1).to_i,
       tags: tags_text,
       category: formatted_category,
-      description: source["description"].presence || source["notes"].presence || "A delicious dish created with your ingredients.",
+      description: source["description"].presence || "A delicious dish.",
       ingredients: ingredients_list,
       directions: directions_list.join(". ").strip
     }
   end
+  
 
   # Build OpenAI recipe prompt
   def build_recipe_prompt(ingredients, diet: nil, servings: nil, category: nil)
