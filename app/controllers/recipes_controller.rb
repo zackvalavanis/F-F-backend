@@ -150,18 +150,28 @@ class RecipesController < ApplicationController
   private
 
   def normalize_recipe(source, category: nil, user_id:)
-    # Convert ingredients to array if it's a string
+    # Ingredients
     ingredients_array = if source["ingredients"].is_a?(String)
                           source["ingredients"].split("\n").map(&:strip)
                         else
                           source["ingredients"] || []
                         end
   
+    # Directions
     directions_array = if source["directions"].is_a?(String)
                          source["directions"].split("\n").map(&:strip)
                        else
                          source["directions"] || []
                        end
+  
+    # Tags
+    tags_array = if source["tags"].is_a?(String)
+                   source["tags"].split(",").map(&:strip).reject(&:empty?)
+                 elsif source["tags"].is_a?(Array)
+                   source["tags"]
+                 else
+                   []
+                 end
   
     ingredients_list = ingredients_array.map do |i|
       if i.is_a?(Hash)
@@ -173,7 +183,6 @@ class RecipesController < ApplicationController
   
     directions_list = directions_array.map(&:strip)
   
-    tags_text = (source["tags"] || []).join(", ")
     formatted_category = category.present? ? category.capitalize : (source["category"] || "Uncategorized").to_s.capitalize
   
     {
@@ -183,13 +192,14 @@ class RecipesController < ApplicationController
       cook_time: (source["cook_time"] || 10).to_i,
       servings: (source["servings"] || 1).to_i,
       difficulty: (source["difficulty"] || 1).to_i,
-      tags: tags_text,
+      tags: tags_array.join(", "),
       category: formatted_category,
       description: source["description"].presence || "A delicious dish.",
       ingredients: ingredients_list,
       directions: directions_list.join(". ").strip
     }
   end
+  
   
 
   # Build OpenAI recipe prompt
