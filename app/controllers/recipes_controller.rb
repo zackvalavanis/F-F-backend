@@ -37,7 +37,8 @@ class RecipesController < ApplicationController
 
   # POST /recipes
   def create
-    recipe = Recipe.new(normalize_recipe(params.to_unsafe_h, category: params[:category], user_id: 1))
+    recipe_attrs = normalize_recipe(params.to_unsafe_h, category: params[:category], user_id: current_user.id)
+    recipe = Recipe.new(recipe_attrs)
 
     if recipe.save
       attach_images(recipe)
@@ -85,9 +86,7 @@ class RecipesController < ApplicationController
     recipe = Recipe.find_by(id: params[:id])
     return render json: { error: 'Recipe not found' }, status: :not_found unless recipe
 
-    user = User.find_by(id: params[:user_id])
-    return render json: { error: 'User not found' }, status: :not_found unless user
-
+    user = current_user
     rating_value = params[:value].to_i.clamp(1, 10)
     rating = Rating.find_or_initialize_by(user: user, recipe: recipe)
     rating.value = rating_value
@@ -120,7 +119,6 @@ class RecipesController < ApplicationController
 
     prompt = build_recipe_prompt(ingredients, diet: diet, servings: servings, category: category)
     openai = OpenaiService.new
-
     raw = openai.chat_system_user(prompt[:system], prompt[:user], model: "gpt-4o-mini", temperature: 0.2, max_tokens: 800)
     parsed = extract_json_from_text(raw)
 
@@ -134,7 +132,7 @@ class RecipesController < ApplicationController
       return render json: { error: 'Could not parse recipe JSON from LLM response', raw: raw }, status: :unprocessable_entity
     end
 
-    recipe_attrs = normalize_recipe(parsed, category: category, user_id: 1)
+    recipe_attrs = normalize_recipe(parsed, category: category, user_id: current_user.id)
 
     if save_to_db
       new_recipe = Recipe.new(recipe_attrs)
@@ -151,8 +149,13 @@ class RecipesController < ApplicationController
 
   private
 
-  def normalize_recipe(source, category: nil, user_id: 1)
-    ingredients_list = (source["ingredients"] || source[:ingredients] || []).map do |i|
+  # Normalize ingredients and directions safely
+  def normalize_recipe(source, category: nil, user_id:)
+    # Convert ingredients string to array if necessary
+    ingredients_raw = source["ingredients"] || source[:ingredients] || ""
+    ingredients_array = ingredients_raw.is_a?(String) ? ingredients_raw.split(/[\n,]+/).map(&:strip) : ingredients_raw
+
+    ingredients_list = ingredients_array.map do |i|
       if i.is_a?(Hash)
         "#{i['quantity'] || ''} #{i['name']}".strip
       else
@@ -160,8 +163,14 @@ class RecipesController < ApplicationController
       end
     end.join(", ")
 
-    directions_list = (source["steps"] || source[:directions] || []).map(&:strip)
-    tags_text = (source["tags"] || source[:tags] || []).join(", ")
+    directions_raw = source["steps"] || source[:directions] || ""
+    directions_array = directions_raw.is_a?(String) ? directions_raw.split(/[\n\.]+/).map(&:strip) : directions_raw
+    directions_list = directions_array.map(&:strip)
+
+    tags_raw = source["tags"] || source[:tags] || []
+    tags_array = tags_raw.is_a?(String) ? tags_raw.split(",").map(&:strip) : tags_raw
+    tags_text = tags_array.join(", ")
+
     formatted_category = category.present? ? category.capitalize : (source["category"] || source[:category] || "Uncategorized").to_s.capitalize
 
     {
@@ -179,6 +188,7 @@ class RecipesController < ApplicationController
     }
   end
 
+  # Build OpenAI recipe prompt
   def build_recipe_prompt(ingredients, diet: nil, servings: nil, category: nil)
     schema = {
       "title" => "string",
@@ -203,13 +213,14 @@ class RecipesController < ApplicationController
 
     user = "Ingredients: [#{ingredients.join(', ')}]."
     user += " Dietary preference: #{diet}." if diet.present?
-    user += " Target servings: #{servings}." if servings.present?
+    user += " Target servings: #{servings}." if servings.present
     user += " Category: #{category}." if category.present?
     user += " Build a recipe using those ingredients where possible. Output JSON only."
 
-    { system:, user: }
+    { system: system, user: user }
   end
 
+  # Safely extract JSON from a string
   def extract_json_from_text(text)
     return nil unless text.is_a?(String)
     first = text.index("{")
@@ -222,6 +233,7 @@ class RecipesController < ApplicationController
     nil
   end
 
+  # Generate an image for a recipe using OpenAI
   def generate_recipe_image(recipe)
     prompt = "A plate of #{recipe.title} with ingredients: #{recipe.ingredients}. Professional food photography style."
     image_url = OpenaiService.new.generate_image(prompt, size: "512x512")
@@ -231,6 +243,7 @@ class RecipesController < ApplicationController
     recipe.images.attach(io: file, filename: "#{recipe.title.parameterize}.png", content_type: 'image/png')
   end
 
+  # Attach uploaded images to recipe
   def attach_images(recipe, replace: false)
     return unless params[:images].present?
 
