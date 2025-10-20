@@ -231,7 +231,7 @@ class RecipesController < ApplicationController
 
     user = "Ingredients: [#{ingredients.join(', ')}]."
     user += " Dietary preference: #{diet}." if diet.present?
-    user += " Target servings: #{servings}." if servings.present
+    user += " Target servings: #{servings}." if servings.to_i > 0
     user += " Category: #{category}." if category.present?
     user += " Build a recipe using those ingredients where possible. Output JSON only."
 
