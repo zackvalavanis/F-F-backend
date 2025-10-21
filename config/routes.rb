@@ -5,6 +5,12 @@ Rails.application.routes.draw do
   # Can be used by load balancers and uptime monitors to verify that the app is live.
   get "up" => "rails/health#show", as: :rails_health_check
 
+  # Ai generate Recipes Routes
+  post "/recipes/generate_from_ingredients" => "recipes#generate_from_ingredients"
+
+  # Ai generate Restaurant Routes
+  post "/restaurants/generate_restaurant", to: "restaurants#generate_restaurant"
+
   # Recipes Routes
   get "/recipes" => "recipes#index"
   get "/recipes/:id" => "recipes#show"
@@ -17,27 +23,17 @@ Rails.application.routes.draw do
     resources :ratings, only: [:create, :index]
   end
 
-  # Ai generate Recipes Routes
-  post "/recipes/generate_from_ingredients" => "recipes#generate_from_ingredients"
-
-  # Ai generate Restaurant Routes
-  post "/restaurants/generate_restaurant" => "restaurants#generate_restaurant"
-
   # User Routes
   post "/users" => "users#create"
 
   # Sessions
   post "/sessions" => "sessions#create"
 
-  # restaurant Routes
-  get "/restaurants" => "restaurants#index"
-  get "/restaurants/:id" => "restaurants#show"
-  patch "/restaurants/:id" => "restaurants#update"
-  post "/restaurants" => "restaurants#create"
-  delete "/restaurants/:id" => "restaurants#destroy"
-
-
-
+  resources :restaurants do
+    collection do
+      post :generate_restaurant
+    end
+  end
 
   # Defines the root path route ("/")
   # root "posts#index"
