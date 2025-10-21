@@ -20,6 +20,9 @@ Rails.application.routes.draw do
   # Ai generate Recipes Routes
   post "/recipes/generate_from_ingredients" => "recipes#generate_from_ingredients"
 
+  # Ai generate Restaurant Routes
+  post "/restaurants/generate_restaurant" => "restaurants#generate_restaurant"
+
   # User Routes
   post "/users" => "users#create"
 
