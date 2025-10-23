@@ -117,6 +117,8 @@ class RecipesController < ApplicationController
     servings = params[:servings].to_i
     save_to_db = ActiveModel::Type::Boolean.new.cast(params[:save])
 
+    Rails.logger.info("Received user_id param: #{params[:user_id]}")
+
     prompt = build_recipe_prompt(ingredients, diet: diet, servings: servings, category: category)
     openai = OpenaiService.new
     raw = openai.chat_system_user(prompt[:system], prompt[:user], model: "gpt-4o-mini", temperature: 0.2, max_tokens: 800)
@@ -133,6 +135,7 @@ class RecipesController < ApplicationController
     end
 
     user_id = params[:user_id].to_i
+    user_id = current_user.id if user_id.zero? && current_user.present?
     recipe_attrs = normalize_recipe(parsed, category: category, user_id: user_id)
 
     if save_to_db
@@ -219,25 +222,26 @@ class RecipesController < ApplicationController
       "tags" => ["string"],
       "notes" => "string or null"
     }
-
+  
     system = <<~SYS
       You are a helpful chef assistant. Produce exactly one valid JSON object following this schema (no additional text):
       #{JSON.pretty_generate(schema)}
-
+  
       - Use null for unknown numeric values.
       - If you can't determine a quantity, set it to null.
       - Keep steps short and numbered.
       - Prefer simple, achievable instructions.
     SYS
-
+  
     user = "Ingredients: [#{ingredients.join(', ')}]."
-    user += " Dietary preference: #{diet}." unless diet.to_s.strip.empty?
-    user += " Target servings: #{servings}." if servings.to_i.positive?
-    user += " Category: #{category}." unless category.to_s.strip.empty?
+    user += " Dietary preference: #{diet}." unless diet.nil? || diet.to_s.strip.empty?
+    user += " Target servings: #{servings}." if servings.to_i > 0
+    user += " Category: #{category}." unless category.nil? || category.to_s.strip.empty?
     user += " Build a recipe using those ingredients where possible. Output JSON only."
-
+  
     { system: system, user: user }
   end
+  
 
   # Safely extract JSON from a string
   def extract_json_from_text(text)
