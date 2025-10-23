@@ -231,9 +231,9 @@ class RecipesController < ApplicationController
     SYS
 
     user = "Ingredients: [#{ingredients.join(', ')}]."
-    user += " Dietary preference: #{diet}." if diet.present?
+    user += " Dietary preference: #{diet}." if diet.to_s.present?
     user += " Target servings: #{servings}." if servings.to_i > 0
-    user += " Category: #{category}." if category.present?
+    user += " Category: #{category}." if category.to_s.present?
     user += " Build a recipe using those ingredients where possible. Output JSON only."
 
     { system: system, user: user }
