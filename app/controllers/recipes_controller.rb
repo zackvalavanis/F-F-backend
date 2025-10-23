@@ -37,7 +37,7 @@ class RecipesController < ApplicationController
 
   # POST /recipes
   def create
-    recipe_attrs = normalize_recipe(params.to_unsafe_h, category: params[:category], user_id: current_user.id)
+    recipe_attrs = normalize_recipe(params.to_unsafe_h, category: params[:category], user_id: params[:user_id])
     recipe = Recipe.new(recipe_attrs)
 
     if recipe.save
@@ -132,7 +132,8 @@ class RecipesController < ApplicationController
       return render json: { error: 'Could not parse recipe JSON from LLM response', raw: raw }, status: :unprocessable_entity
     end
 
-    recipe_attrs = normalize_recipe(parsed, category: category, user_id: current_user.id)
+    user_id = params[:user_id].to_i
+    recipe_attrs = normalize_recipe(parsed, category: category, user_id: user_id)
 
     if save_to_db
       new_recipe = Recipe.new(recipe_attrs)
