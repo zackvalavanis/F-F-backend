@@ -166,13 +166,16 @@ class RecipesController < ApplicationController
   
     # Directions
     directions_array = case source["directions"]
-                       when String
-                         [source["directions"]].reject(&:blank?)
-                       when Array
-                         source["directions"]
-                       else
-                         []
-                       end
+    when String then [source["directions"]].reject(&:blank?)
+    when Array then source["directions"]
+    else
+      # fallback to "steps" if "directions" is missing
+      case source["steps"]
+      when String then [source["steps"]].reject(&:blank?)
+      when Array then source["steps"]
+      else []
+      end
+    end
   
     # Tags
     tags_array = case source["tags"]
