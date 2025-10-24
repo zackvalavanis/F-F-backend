@@ -155,45 +155,13 @@ class RecipesController < ApplicationController
 
   def normalize_recipe(source, category: nil, user_id:)
     # Ingredients
-    ingredients_array = case source["ingredients"]
-                        when String
-                          [source["ingredients"]].reject(&:blank?) # wrap string in array
-                        when Array
-                          source["ingredients"]
-                        else
-                          []
-                        end
+    ingredients_array = Array(source["ingredients"])
   
-    # Directions
-    directions_array = case source["directions"]
-    when String then [source["directions"]].reject(&:blank?)
-    when Array then source["directions"]
-    else
-      # fallback to "steps" if "directions" is missing
-      case source["steps"]
-      when String then [source["steps"]].reject(&:blank?)
-      when Array then source["steps"]
-      else []
-      end
-    end
+    # Directions (fallback to any key)
+    directions_array = Array(source["directions"] || source["steps"] || source["Steps"] || source["Directions"])
   
     # Tags
-    tags_array = case source["tags"]
-                 when String
-                   source["tags"].split(",").map(&:strip).reject(&:blank?)
-                 when Array
-                   source["tags"]
-                 else
-                   []
-                 end
-  
-    ingredients_list = ingredients_array.map do |i|
-      i.is_a?(Hash) ? "#{i['quantity'] || ''} #{i['name']}".strip : i.to_s.strip
-    end.join(", ")
-  
-    directions_list = directions_array.map(&:strip)
-  
-    formatted_category = category.present? ? category.capitalize : (source["category"] || "Uncategorized").to_s.capitalize
+    tags_array = Array(source["tags"]).map { |t| t.to_s.strip }
   
     {
       user_id: user_id,
@@ -203,10 +171,10 @@ class RecipesController < ApplicationController
       servings: (source["servings"] || 1).to_i,
       difficulty: (source["difficulty"] || 1).to_i,
       tags: tags_array.join(", "),
-      category: formatted_category,
+      category: category.present? ? category.capitalize : (source["category"] || "Uncategorized").to_s.capitalize,
       description: source["description"].presence || "A delicious dish.",
-      ingredients: ingredients_list,
-      directions: directions_list.join(". ").strip
+      ingredients: ingredients_array.map { |i| i.is_a?(Hash) ? "#{i['quantity']} #{i['name']}".strip : i.to_s.strip }.join(", "),
+      directions: directions_array.map(&:strip).join(". ").strip
     }
   end
   
