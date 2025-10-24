@@ -195,13 +195,13 @@ class RecipesController < ApplicationController
     }
   
     system = <<~SYS
-      You are a helpful chef assistant. Produce exactly one valid JSON object following this schema (no additional text):
+      You are a professional chef. Produce exactly one valid JSON object following this schema (no additional text):
       #{JSON.pretty_generate(schema)}
   
       - Use null for unknown numeric values.
       - If you can't determine a quantity, set it to null.
-      - Keep steps short and numbered.
-      - Prefer simple, achievable instructions.
+      - Keep steps numbered and thorough.
+      - Prefer, achievable but well made instructions.
     SYS
   
     user = "Ingredients: [#{ingredients.join(', ')}]."
