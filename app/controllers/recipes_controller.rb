@@ -185,6 +185,8 @@ class RecipesController < ApplicationController
   def build_recipe_prompt(ingredients, diet: nil, servings: nil, category: nil)
     schema = {
       "title" => "string",
+      "prep_time" => "number",
+      "cook_time" => "number",
       "description" => 'string', 
       "category" => "string",
       "servings" => "number or null",
