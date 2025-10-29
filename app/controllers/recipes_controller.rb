@@ -185,6 +185,7 @@ class RecipesController < ApplicationController
   def build_recipe_prompt(ingredients, diet: nil, servings: nil, category: nil)
     schema = {
       "title" => "string",
+      "description" => 'string', 
       "category" => "string",
       "servings" => "number or null",
       "total_minutes" => "number or null",
@@ -202,6 +203,7 @@ class RecipesController < ApplicationController
       - If you can't determine a quantity, set it to null.
       - Keep steps numbered and thorough.
       - Prefer, achievable but well made instructions.
+      - Detailed description no less than a paragraph.
     SYS
   
     user = "Ingredients: [#{ingredients.join(', ')}]."
