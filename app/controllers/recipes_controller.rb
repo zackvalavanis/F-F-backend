@@ -37,14 +37,14 @@ class RecipesController < ApplicationController
 
   # POST /recipes
   def create
-    recipe_attrs = normalize_recipe(params.to_unsafe_h, category: params[:category], user_id: params[:user_id])
+    recipe_attrs = normalize_recipe_manual(params.to_unsafe_h, category: params[:category], user_id: params[:user_id], ingredients: params[:ingredients], directions: params[:directions])
     recipe = Recipe.new(recipe_attrs)
-
+  
     if recipe.save
       attach_images(recipe)
       render json: { message: 'Recipe created successfully', recipe: recipe_with_images(recipe) }, status: :created
     else
-      render json: { errors: recipe.errors.full_messages }, status: :unprocessable_entity
+      render json: { errors: recipe.errors.full_messages }, status: :unprocessable_content
     end
   end
 
@@ -68,7 +68,7 @@ class RecipesController < ApplicationController
       attach_images(recipe, replace: true)
       render json: { message: 'Recipe updated successfully', recipe: recipe_with_images(recipe) }, status: :ok
     else
-      render json: { errors: recipe.errors.full_messages }, status: :unprocessable_entity
+      render json: { errors: recipe.errors.full_messages }, status: :unprocessable_content
     end
   end
 
@@ -98,7 +98,7 @@ class RecipesController < ApplicationController
         user_rating: rating_value
       }, status: :ok
     else
-      render json: { errors: rating.errors.full_messages }, status: :unprocessable_entity
+      render json: { errors: rating.errors.full_messages }, status: :unprocessable_content
     end
   end
 
@@ -131,7 +131,7 @@ class RecipesController < ApplicationController
     end
 
     unless parsed
-      return render json: { error: 'Could not parse recipe JSON from LLM response', raw: raw }, status: :unprocessable_entity
+      return render json: { error: 'Could not parse recipe JSON from LLM response', raw: raw }, status: :unprocessable_content
     end
 
     user_id = params[:user_id].to_i
@@ -144,7 +144,7 @@ class RecipesController < ApplicationController
         generate_recipe_image(new_recipe)
         render json: { message: 'AI recipe created', recipe: recipe_with_images(new_recipe) }, status: :created
       else
-        render json: { error: 'Failed to save recipe', details: new_recipe.errors.full_messages }, status: :unprocessable_entity
+        render json: { error: 'Failed to save recipe', details: new_recipe.errors.full_messages }, status: :unprocessable_content
       end
     else
       render json: { generated: parsed, normalized: recipe_attrs }, status: :ok
@@ -152,6 +152,49 @@ class RecipesController < ApplicationController
   end
 
   private
+
+
+
+  def normalize_recipe_manual(source, category: nil, user_id:, ingredients:, directions:)
+    # Normalize ingredients
+    ingredients_raw = source["ingredients"] || ""
+    ingredients_array = if ingredients_raw.is_a?(String)
+                          # Split by commas and strip whitespace
+                          ingredients_raw.split(",").map(&:strip)
+                        elsif ingredients_raw.is_a?(Array)
+                          ingredients_raw.map(&:to_s).map(&:strip)
+                        else
+                          []
+                        end
+  
+    # Normalize directions
+    directions_raw = source["directions"] || source["steps"] || source["Steps"] || source["Directions"] || ""
+    directions_array = if directions_raw.is_a?(String)
+                         # Split by commas or periods (common separators) and strip whitespace
+                         directions_raw.split(/[.,]/).map(&:strip).reject(&:empty?)
+                       elsif directions_raw.is_a?(Array)
+                         directions_raw.map(&:strip)
+                       else
+                         []
+                       end
+  
+    # Normalize tags
+    tags_array = Array(source["tags"]).map(&:to_s).map(&:strip)
+  
+    {
+      user_id: user_id,
+      title: source["title"] || "AI-generated recipe",
+      prep_time: (source["prep_time"] || 10).to_i,
+      cook_time: (source["cook_time"] || 10).to_i,
+      servings: (source["servings"] || 1).to_i,
+      difficulty: (source["difficulty"] || 1).to_i,
+      tags: tags_array.join(", "),
+      category: category.present? ? category.capitalize : (source["category"] || "Uncategorized").to_s.capitalize,
+      description: source["description"].presence || "A delicious dish.",
+      ingredients: ingredients_array.join(", "),
+      directions: directions_array.join(". ")
+    }
+  end
 
   def normalize_recipe(source, category: nil, user_id:)
     # Ingredients
