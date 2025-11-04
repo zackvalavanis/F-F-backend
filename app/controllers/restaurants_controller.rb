@@ -96,23 +96,21 @@ class RestaurantsController < ApplicationController
             prompt = "A photo of #{restaurant.name}, a #{restaurant.category} in #{city}"
             image_resp = openai.images.generate(parameters: { prompt: prompt, size: "512x512" })
             image_url = image_resp.dig("data", 0, "url")
-            puts "Image URL: #{image_url}"
   
             if image_url
               downloaded_image = URI.open(image_url)
-              restaurant.images.attach(io: downloaded_image, filename: "#{restaurant.name.parameterize}.png")
-              puts "Image attached for #{restaurant.name}"
-            else
-              puts "No image returned from OpenAI for #{restaurant.name}"
+              restaurant.images.attach(
+                io: downloaded_image,
+                filename: "#{restaurant.name.parameterize}.png"
+              )
             end
           rescue => e
-            puts "Image generation failed for #{restaurant.name}: #{e.message}"
+            Rails.logger.error "Image generation failed for #{restaurant.name}: #{e.message}"
           end
-        else
-          puts restaurant.errors.full_messages
         end
   
-        restaurant
+        # Return restaurant with image URLs for API
+        restaurant.as_json.merge({ images: restaurant.image_urls })
       end
   
       render json: restaurants, status: :created
@@ -120,6 +118,7 @@ class RestaurantsController < ApplicationController
       render json: enriched_restaurants
     end
   end
+  
   
   private
 
