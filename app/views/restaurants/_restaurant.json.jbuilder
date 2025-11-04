@@ -22,7 +22,5 @@ json.kid_friendly restaurant.kid_friendly
 json.parking restaurant.parking
 json.created_at restaurant.created_at
 json.updated_at restaurant.updated_at
-json.images restaurant.images.map { |img| Rails.application.routes.url_helpers.rails_blob_path(img, only_path: true) }
-
-
+json.images restaurant.images.map { |img| rails_blob_url(img, host: request.base_url) }
 

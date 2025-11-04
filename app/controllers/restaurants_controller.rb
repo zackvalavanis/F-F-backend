@@ -18,14 +18,14 @@ class RestaurantsController < ApplicationController
 
   # GET /restaurants/:id
   def show
-    render json: @restaurant
+    render json: restaurant_json(@restaurant)
   end
 
   # POST /restaurants
   def create
     @restaurant = Restaurant.new(restaurant_params)
     if @restaurant.save
-      render json: @restaurant, status: :created
+      render json: restaurant_json(@restaurant), status: :created
     else
       render json: { errors: @restaurant.errors.full_messages }, status: :unprocessable_entity
     end
@@ -34,7 +34,7 @@ class RestaurantsController < ApplicationController
   # PATCH/PUT /restaurants/:id
   def update
     if @restaurant.update(restaurant_params)
-      render json: @restaurant
+      render json: restaurant_json(@restaurant)
     else
       render json: { errors: @restaurant.errors.full_messages }, status: :unprocessable_entity
     end
@@ -52,7 +52,7 @@ class RestaurantsController < ApplicationController
   def generate_restaurant
     city = params[:city]
     category = params[:category]
-    price_level = params[:price_level]&.to_i
+    price_level = params[:price]&.to_i
     save_to_db = ActiveModel::Type::Boolean.new.cast(params[:save])
   
     places_service = GooglePlacesService.new
@@ -109,17 +109,16 @@ class RestaurantsController < ApplicationController
           end
         end
   
-        # Return restaurant with image URLs for API
-        restaurant.as_json.merge({ images: restaurant.image_urls })
+        restaurant
       end
   
-      render json: restaurants, status: :created
+      render :generate_restaurant, locals: { restaurants: restaurants }, status: :created
     else
       render json: enriched_restaurants
     end
   end
   
-  
+
   private
 
   # Callbacks
@@ -138,6 +137,38 @@ class RestaurantsController < ApplicationController
       :latitude, :longitude, :opening_hours,
       :delivery_option, :vegan_friendly, :kid_friendly, :parking
     )
+  end
+
+  # JSON helper for restaurant
+  def restaurant_json(restaurant)
+    {
+      id: restaurant.id,
+      name: restaurant.name,
+      price: restaurant.price,
+      rating: restaurant.rating,
+      food_type: restaurant.food_type,
+      category: restaurant.category,
+      description: restaurant.description,
+      phone_number: restaurant.phone_number,
+      website: restaurant.website,
+      email: restaurant.email,
+      address: restaurant.address,
+      city: restaurant.city,
+      state: restaurant.state,
+      zip_code: restaurant.zip_code,
+      latitude: restaurant.latitude,
+      longitude: restaurant.longitude,
+      opening_hours: restaurant.opening_hours,
+      delivery_option: restaurant.delivery_option,
+      vegan_friendly: restaurant.vegan_friendly,
+      kid_friendly: restaurant.kid_friendly,
+      parking: restaurant.parking,
+      created_at: restaurant.created_at,
+      updated_at: restaurant.updated_at,
+      images: restaurant.images.map do |img|
+        Rails.application.routes.url_helpers.rails_blob_url(img, host: request.base_url)
+      end
+    }
   end
 
   # Build AI prompt
