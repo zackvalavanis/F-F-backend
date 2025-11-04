@@ -72,3 +72,4 @@ gem 'jwt'
 gem 'ruby-openai', '~> 8.3.0'
 gem 'dotenv-rails', groups: [:development, :production]
 gem 'cloudinary'
+gem 'httparty'

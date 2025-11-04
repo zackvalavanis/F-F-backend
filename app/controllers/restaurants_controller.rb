@@ -52,26 +52,75 @@ class RestaurantsController < ApplicationController
   def generate_restaurant
     city = params[:city]
     category = params[:category]
-    price = params[:price]
+    price_level = params[:price_level]&.to_i
     save_to_db = ActiveModel::Type::Boolean.new.cast(params[:save])
-
-    prompt_data = build_restaurant_prompt(city: city, category: category, price: price)
-
-    openai = OpenaiService.new
-    ai_response = openai.chat_system_user(prompt_data[:system], prompt_data[:user], temperature: 0.7)
-    restaurant_json = JSON.parse(ai_response)
-
-    if save_to_db
-      restaurant = Restaurant.create(restaurant_json)
-      render json: restaurant, status: :created
-    else
-      render json: restaurant_json
+  
+    places_service = GooglePlacesService.new
+    real_restaurants = places_service.fetch_restaurants(
+      city: city,
+      category: category,
+      price_level: price_level
+    )
+  
+    enriched_restaurants = real_restaurants.map do |r|
+      {
+        name: r[:name],
+        address: r[:address],
+        city: city,
+        state: "IL",
+        zip_code: nil,
+        rating: r[:rating] || nil,
+        price: r[:price] || nil,
+        latitude: r[:latitude],
+        longitude: r[:longitude],
+        category: category || "Restaurant",
+        food_type: category || "Various",
+        description: "Delicious #{category || 'food'} in #{city}",
+        delivery_option: false,
+        vegan_friendly: false,
+        kid_friendly: false,
+        parking: "Street",
+        opening_hours: nil,
+        website: nil,
+        email: nil
+      }
     end
-
-  rescue JSON::ParserError => e
-    render json: { error: "Invalid JSON returned by AI: #{e.message}" }, status: :unprocessable_entity
+  
+    if save_to_db
+      restaurants = enriched_restaurants.map do |r|
+        restaurant = Restaurant.create(r)
+  
+        if restaurant.persisted?
+          begin
+            openai = OpenAI::Client.new(access_token: ENV['OPENAI_API_KEY'])
+            prompt = "A photo of #{restaurant.name}, a #{restaurant.category} in #{city}"
+            image_resp = openai.images.generate(parameters: { prompt: prompt, size: "512x512" })
+            image_url = image_resp.dig("data", 0, "url")
+            puts "Image URL: #{image_url}"
+  
+            if image_url
+              downloaded_image = URI.open(image_url)
+              restaurant.images.attach(io: downloaded_image, filename: "#{restaurant.name.parameterize}.png")
+              puts "Image attached for #{restaurant.name}"
+            else
+              puts "No image returned from OpenAI for #{restaurant.name}"
+            end
+          rescue => e
+            puts "Image generation failed for #{restaurant.name}: #{e.message}"
+          end
+        else
+          puts restaurant.errors.full_messages
+        end
+  
+        restaurant
+      end
+  
+      render json: restaurants, status: :created
+    else
+      render json: enriched_restaurants
+    end
   end
-
+  
   private
 
   # Callbacks
@@ -127,7 +176,7 @@ class RestaurantsController < ApplicationController
       - Do not include extra explanation or comments.
     SYS
 
-    user_message = "Generate a restaurant"
+    user_message = "Find a restaurant"
     user_message += " in city: #{city}" if city.present?
     user_message += " with category: #{category}" if category.present?
     user_message += " with price: #{price}" if price.present?
