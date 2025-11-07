@@ -62,7 +62,37 @@ class RestaurantsController < ApplicationController
       price_level: price_level
     )
   
+    openai = OpenAI::Client.new(access_token: ENV['OPENAI_API_KEY'])
+  
+    # ✅ Add AI descriptions for each Google restaurant
     enriched_restaurants = real_restaurants.map do |r|
+      begin
+        prompt = build_restaurant_prompt(
+          city: city,
+          category: category || r[:category],
+          price: r[:price],
+          description: nil
+        )
+  
+        response = openai.chat(
+          parameters: {
+            model: "gpt-4o-mini",
+            messages: [
+              { role: "system", content: prompt[:system] },
+              { role: "user", content: prompt[:user] }
+            ],
+            temperature: 0.8
+          }
+        )
+  
+        ai_data = JSON.parse(response.dig("choices", 0, "message", "content")) rescue {}
+        ai_description = ai_data["description"]
+  
+      rescue => e
+        Rails.logger.error "AI description failed for #{r[:name]}: #{e.message}"
+        ai_description = "A popular spot in #{city} serving delicious #{category || 'dishes'}."
+      end
+  
       {
         name: r[:name],
         address: r[:address],
@@ -75,7 +105,7 @@ class RestaurantsController < ApplicationController
         longitude: r[:longitude],
         category: category || "Restaurant",
         food_type: category || "Various",
-        description: "Delicious #{category || 'food'} in #{city}",
+        description: ai_description, # ✅ now populated
         delivery_option: false,
         vegan_friendly: false,
         kid_friendly: false,
@@ -92,7 +122,6 @@ class RestaurantsController < ApplicationController
   
         if restaurant.persisted?
           begin
-            openai = OpenAI::Client.new(access_token: ENV['OPENAI_API_KEY'])
             prompt = "A photo of #{restaurant.name}, a #{restaurant.category} in #{city}"
             image_resp = openai.images.generate(parameters: { prompt: prompt, size: "512x512" })
             image_url = image_resp.dig("data", 0, "url")
@@ -111,6 +140,7 @@ class RestaurantsController < ApplicationController
   
         restaurant
       end
+  
       render json: restaurants.map { |r| restaurant_json(r) }, status: :created 
     else
       render json: enriched_restaurants
@@ -171,7 +201,7 @@ class RestaurantsController < ApplicationController
   end
 
   # Build AI prompt
-  def build_restaurant_prompt(city: nil, category: nil, price: nil)
+  def build_restaurant_prompt(city: nil, category: nil, price: nil, description: nil)
     schema = {
       "name" => "string",
       "food_type" => "string",
@@ -195,20 +225,23 @@ class RestaurantsController < ApplicationController
     }
 
     system_message = <<~SYS
-      You are a helpful restauranteur. Produce exactly one valid JSON object following this schema (no additional text):
+      You are a professional restauranteur. Produce exactly one valid JSON object following this schema (no additional text):
       #{JSON.pretty_generate(schema)}
 
+     
+      - The "description" field should be a rich, enticing 3–6 sentence paragraph describing the restaurant’s atmosphere, style, and cuisine.
+      - Be specific and creative. Pretend you visited the restaurant.
       - Use null for unknown numeric values.
-      - Keep text short and concise.
-      - Fill in city, price, and category if provided.
-      - Boolean fields should be true/false.
-      - Do not include extra explanation or comments.
+      - Boolean fields must be true or false.
+      - Include realistic data for address, phone, and website if missing.
+      - Do NOT include markdown, labels, or commentary — JSON only.
     SYS
 
     user_message = "Find a restaurant"
     user_message += " in city: #{city}" if city.present?
     user_message += " with category: #{category}" if category.present?
     user_message += " with price: #{price}" if price.present?
+    user_message += ". Include a detailed, enticing description field."
     user_message += ". Return JSON only."
 
     { system: system_message, user: user_message }

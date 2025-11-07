@@ -10,7 +10,7 @@ class GooglePlacesService
 
   # Fetch real restaurants
   # city: string, category: string (optional), price_level: 0..4 (optional)
-  def fetch_restaurants(city:, category: nil, price_level: nil, limit: 2)
+  def fetch_restaurants(city:, category: nil, price_level: nil, limit: 1)
     restaurants = []
     query = "restaurants in #{city}"
     query += " #{category}" if category.present?
@@ -40,7 +40,7 @@ class GooglePlacesService
           zip_code: nil,
           category: category || "Restaurant",
           food_type: category || "Various",
-          description: "Delicious #{category || 'food'} in #{city}",
+          description: r['description'],
           delivery_option: false,
           vegan_friendly: false,
           kid_friendly: false,
