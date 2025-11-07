@@ -282,14 +282,21 @@ class RecipesController < ApplicationController
     prompt = "A beautifully plated dish of #{recipe.title}. " \
              "Includes #{ingredients_text}. " \
              "Professional food photography style, soft lighting, shallow depth of field."
-    
+  
     Rails.logger.info("IMAGE GENERATION PROMPT: #{prompt.inspect}")
   
-    image_url = OpenaiService.new.generate_image(prompt, size: 'auto')
-    return unless image_url
+    begin
+      openai = OpenAI::Client.new(access_token: ENV['OPENAI_API_KEY'])
+      image_resp = openai.images.generate(parameters: { prompt: prompt, size: "512x512" })
+      image_url = image_resp.dig("data", 0, "url")
   
-    file = URI.open(image_url)
-    recipe.images.attach(io: file, filename: "#{recipe.title.parameterize}.png", content_type: 'image/png')
+      if image_url
+        file = URI.open(image_url)
+        recipe.images.attach(io: file, filename: "#{recipe.title.parameterize}.png", content_type: 'image/png')
+      end
+    rescue => e
+      Rails.logger.error "Recipe image generation failed for #{recipe.title}: #{e.message}"
+    end
   end
   
 

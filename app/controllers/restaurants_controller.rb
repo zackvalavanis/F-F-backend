@@ -111,8 +111,7 @@ class RestaurantsController < ApplicationController
   
         restaurant
       end
-  
-      render :generate_restaurant, locals: { restaurants: restaurants }, status: :created
+      render json: restaurants.map { |r| restaurant_json(r) }, status: :created 
     else
       render json: enriched_restaurants
     end
