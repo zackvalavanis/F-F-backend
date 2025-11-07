@@ -22,12 +22,21 @@ class OpenaiService
   end
 
   def generate_image(prompt, size: "512x512")
+    Rails.logger.info("IMAGE PROMPT: #{prompt.inspect}")
+    
     response = @client.images.generate(
-      parameters: { 
-        prompt: prompt, 
+      parameters: {
+        model: "gpt-image-1",
+        prompt: prompt,
         size: size
       }
     )
+    
+    Rails.logger.info("IMAGE RESPONSE: #{response.inspect}")
     response.dig("data", 0, "url")
+  rescue Faraday::BadRequestError, Faraday::ForbiddenError => e
+    Rails.logger.error("Image generation failed: #{e.response_body}")
+    nil
   end
+  
 end

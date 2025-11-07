@@ -276,13 +276,22 @@ class RecipesController < ApplicationController
 
   # Generate an image for a recipe using OpenAI
   def generate_recipe_image(recipe)
-    prompt = "A plate of #{recipe.title} with ingredients: #{recipe.ingredients}. Professional food photography style."
-    image_url = OpenaiService.new.generate_image(prompt, size: "512x512")
+    ingredients_text = recipe.ingredients.to_s.strip
+    ingredients_text = "assorted ingredients" if ingredients_text.empty?
+  
+    prompt = "A beautifully plated dish of #{recipe.title}. " \
+             "Includes #{ingredients_text}. " \
+             "Professional food photography style, soft lighting, shallow depth of field."
+    
+    Rails.logger.info("IMAGE GENERATION PROMPT: #{prompt.inspect}")
+  
+    image_url = OpenaiService.new.generate_image(prompt, size: 'auto')
     return unless image_url
-
+  
     file = URI.open(image_url)
     recipe.images.attach(io: file, filename: "#{recipe.title.parameterize}.png", content_type: 'image/png')
   end
+  
 
   # Attach uploaded images to recipe
   def attach_images(recipe, replace: false)
