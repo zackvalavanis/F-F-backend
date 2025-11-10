@@ -67,27 +67,29 @@ class RestaurantsController < ApplicationController
     # ✅ Add AI descriptions for each Google restaurant
     enriched_restaurants = real_restaurants.map do |r|
       begin
-        prompt = build_restaurant_prompt(
-          city: city,
-          category: category || r[:category],
-          price: r[:price],
-          description: nil
-        )
+        description_prompt = <<~PROMPT
+          Write a vivid 3–5 sentence description for a restaurant named "#{r[:name]}".
+          City: #{city}.
+          Category: #{category || r[:category] || 'Restaurant'}.
+          Price level: #{r[:price] || price_level}.
+          Include details about the food, atmosphere, and vibe.
+          Output only valid JSON like:
+          {"description": "…"}
+        PROMPT
   
         response = openai.chat(
           parameters: {
             model: "gpt-4o-mini",
             messages: [
-              { role: "system", content: prompt[:system] },
-              { role: "user", content: prompt[:user] }
+              { role: "system", content: "You generate realistic restaurant descriptions. Output valid JSON only." },
+              { role: "user", content: description_prompt }
             ],
-            temperature: 0.8
+            temperature: 0.4
           }
         )
   
         ai_data = JSON.parse(response.dig("choices", 0, "message", "content")) rescue {}
-        ai_description = ai_data["description"]
-  
+        ai_description = ai_data["description"] || "A well-known restaurant in #{city} known for great #{category || 'food'}."
       rescue => e
         Rails.logger.error "AI description failed for #{r[:name]}: #{e.message}"
         ai_description = "A popular spot in #{city} serving delicious #{category || 'dishes'}."
@@ -99,13 +101,13 @@ class RestaurantsController < ApplicationController
         city: city,
         state: "IL",
         zip_code: nil,
-        rating: r[:rating] || nil,
-        price: r[:price] || nil,
+        rating: r[:rating],
+        price: r[:price],
         latitude: r[:latitude],
         longitude: r[:longitude],
         category: category || "Restaurant",
         food_type: category || "Various",
-        description: ai_description, # ✅ now populated
+        description: ai_description,
         delivery_option: false,
         vegan_friendly: false,
         kid_friendly: false,
@@ -141,13 +143,12 @@ class RestaurantsController < ApplicationController
         restaurant
       end
   
-      render json: restaurants.map { |r| restaurant_json(r) }, status: :created 
+      render json: restaurants.map { |r| restaurant_json(r) }, status: :created
     else
       render json: enriched_restaurants
     end
   end
   
-
   private
 
   # Callbacks
