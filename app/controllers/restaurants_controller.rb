@@ -23,7 +23,7 @@ class RestaurantsController < ApplicationController
 
   # POST /restaurants
   def create
-    @restaurant = Restaurant.new(restaurant_params)
+    @restaurant = current_user.restaurants.build(restaurant_params) # assign user automatically
     if @restaurant.save
       render json: restaurant_json(@restaurant), status: :created
     else
@@ -64,7 +64,7 @@ class RestaurantsController < ApplicationController
   
     openai = OpenAI::Client.new(access_token: ENV['OPENAI_API_KEY'])
   
-    # ✅ Add AI descriptions for each Google restaurant
+    # Add AI descriptions for each restaurant
     enriched_restaurants = real_restaurants.map do |r|
       begin
         description_prompt = <<~PROMPT
@@ -76,7 +76,7 @@ class RestaurantsController < ApplicationController
           Output only valid JSON like:
           {"description": "…"}
         PROMPT
-  
+
         response = openai.chat(
           parameters: {
             model: "gpt-4o-mini",
@@ -87,14 +87,14 @@ class RestaurantsController < ApplicationController
             temperature: 0.4
           }
         )
-  
+
         ai_data = JSON.parse(response.dig("choices", 0, "message", "content")) rescue {}
         ai_description = ai_data["description"] || "A well-known restaurant in #{city} known for great #{category || 'food'}."
       rescue => e
         Rails.logger.error "AI description failed for #{r[:name]}: #{e.message}"
         ai_description = "A popular spot in #{city} serving delicious #{category || 'dishes'}."
       end
-  
+
       {
         name: r[:name],
         address: r[:address],
@@ -114,20 +114,21 @@ class RestaurantsController < ApplicationController
         parking: "Street",
         opening_hours: nil,
         website: nil,
-        email: nil
+        email: nil,
+        user_id: current_user.id # attach current_user to AI-generated restaurants
       }
     end
-  
+
     if save_to_db
       restaurants = enriched_restaurants.map do |r|
-        restaurant = Restaurant.create(r)
-  
+        restaurant = current_user.restaurants.create(r) # ensure user is assigned
+
         if restaurant.persisted?
           begin
             prompt = "A photo of #{restaurant.name}, a #{restaurant.category} in #{city}"
             image_resp = openai.images.generate(parameters: { prompt: prompt, size: "512x512" })
             image_url = image_resp.dig("data", 0, "url")
-  
+
             if image_url
               downloaded_image = URI.open(image_url)
               restaurant.images.attach(
@@ -139,16 +140,24 @@ class RestaurantsController < ApplicationController
             Rails.logger.error "Image generation failed for #{restaurant.name}: #{e.message}"
           end
         end
-  
+
         restaurant
       end
-  
+
       render json: restaurants.map { |r| restaurant_json(r) }, status: :created
     else
+      # Include current_user info even if not saved
+      enriched_restaurants.each do |r|
+        r[:user] = {
+          id: current_user.id,
+          name: current_user.name,
+          email: current_user.email
+        } if defined?(current_user)
+      end
       render json: enriched_restaurants
     end
   end
-  
+
   private
 
   # Callbacks
@@ -165,7 +174,8 @@ class RestaurantsController < ApplicationController
       :description, :phone_number, :website, :email,
       :address, :city, :state, :zip_code,
       :latitude, :longitude, :opening_hours,
-      :delivery_option, :vegan_friendly, :kid_friendly, :parking
+      :delivery_option, :vegan_friendly, :kid_friendly, :parking,
+      :user_id
     )
   end
 
@@ -197,7 +207,12 @@ class RestaurantsController < ApplicationController
       updated_at: restaurant.updated_at,
       images: restaurant.images.map do |img|
         Rails.application.routes.url_helpers.rails_blob_url(img, host: request.base_url)
-      end
+      end,
+      user: restaurant.user.present? ? {
+        id: restaurant.user.id,
+        name: restaurant.user.name,
+        email: restaurant.user.email
+      } : nil
     }
   end
 
@@ -229,7 +244,6 @@ class RestaurantsController < ApplicationController
       You are a professional restauranteur. Produce exactly one valid JSON object following this schema (no additional text):
       #{JSON.pretty_generate(schema)}
 
-     
       - The "description" field should be a rich, enticing 3–6 sentence paragraph describing the restaurant’s atmosphere, style, and cuisine.
       - Be specific and creative. Pretend you visited the restaurant.
       - Use null for unknown numeric values.
