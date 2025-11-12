@@ -10,7 +10,7 @@ class RestaurantsController < ApplicationController
   def index
     @restaurants = Restaurant.all
     @restaurants = @restaurants.where(price: params[:price]) if params[:price].present?
-    @restaurants = @restaurants.where('rating >= ?', params[:min_rating].to_i) if params[:min_rating].present?
+    @restaurants = @restaurants.where('rating >= ?', params[:min_rating].to_f) if params[:min_rating].present?
     @restaurants = @restaurants.where(city: params[:city]) if params[:city].present?
     @restaurants = @restaurants.where('food_type ILIKE ?', "%#{params[:food_type]}%") if params[:food_type].present?
     render :index
@@ -23,7 +23,7 @@ class RestaurantsController < ApplicationController
 
   # POST /restaurants
   def create
-    @restaurant = current_user.restaurants.build(restaurant_params) # assign user automatically
+    @restaurant = Restaurant.new(restaurant_params)
     if @restaurant.save
       render json: restaurant_json(@restaurant), status: :created
     else
@@ -46,65 +46,77 @@ class RestaurantsController < ApplicationController
     head :no_content
   end
 
-  # =============================
-  # AI generate restaurant action
-  # =============================
+  # POST /restaurants/generate_restaurant
   def generate_restaurant
-    city = params[:city]
-    category = params[:category]
-    price_level = params[:price]&.to_i
-    save_to_db = ActiveModel::Type::Boolean.new.cast(params[:save])
-  
-    places_service = GooglePlacesService.new
-    real_restaurants = places_service.fetch_restaurants(
-      city: city,
-      category: category,
-      price_level: price_level
-    )
-  
-    openai = OpenAI::Client.new(access_token: ENV['OPENAI_API_KEY'])
-  
-    # Add AI descriptions for each restaurant
-    enriched_restaurants = real_restaurants.map do |r|
-      begin
-        description_prompt = <<~PROMPT
-          Write a vivid 3–5 sentence description for a restaurant named "#{r[:name]}".
-          City: #{city}.
-          Category: #{category || r[:category] || 'Restaurant'}.
-          Price level: #{r[:price] || price_level}.
-          Include details about the food, atmosphere, and vibe.
-          Output only valid JSON like:
-          {"description": "…"}
-        PROMPT
+    begin
+      city = params[:city]
+      category = params[:category]
+      price_level = params[:price]&.to_i
+      save_to_db = ActiveModel::Type::Boolean.new.cast(params[:save])
 
-        response = openai.chat(
-          parameters: {
-            model: "gpt-4o-mini",
-            messages: [
-              { role: "system", content: "You generate realistic restaurant descriptions. Output valid JSON only." },
-              { role: "user", content: description_prompt }
-            ],
-            temperature: 0.4
-          }
-        )
+      return render json: { error: "City parameter is required" }, status: :bad_request unless city.present?
 
-        ai_data = JSON.parse(response.dig("choices", 0, "message", "content")) rescue {}
-        ai_description = ai_data["description"] || "A well-known restaurant in #{city} known for great #{category || 'food'}."
-      rescue => e
-        Rails.logger.error "AI description failed for #{r[:name]}: #{e.message}"
-        ai_description = "A popular spot in #{city} serving delicious #{category || 'dishes'}."
+      # Fetch restaurants from Google
+      places_service = GooglePlacesService.new
+      real_restaurants = places_service.fetch_restaurants(
+        city: city,
+        category: category,
+        price_level: price_level,
+        limit: 10
+      ) rescue []
+
+      real_restaurants.uniq! { |r| [r[:name].to_s.downcase.strip, r[:address].to_s.downcase.strip] }
+      real_restaurants.shuffle!
+
+      if real_restaurants.empty?
+        return render json: { error: "No restaurants found for the given parameters" }, status: :not_found
       end
 
-      {
-        name: r[:name],
-        address: r[:address],
+      # Pick a restaurant that doesn't exist yet
+      selected_restaurant = real_restaurants.find { |r| !Restaurant.exists?(name: r[:name]) }
+      return render json: { error: "All returned restaurants already exist in database" }, status: :conflict unless selected_restaurant
+
+      openai = OpenAI::Client.new(access_token: ENV['OPENAI_API_KEY'])
+
+      # Generate description
+      description_prompt = <<~PROMPT
+        Write a vivid 3–5 sentence description for a restaurant named "#{selected_restaurant[:name]}".
+        City: #{city}.
+        Category: #{category || selected_restaurant[:category] || 'Restaurant'}.
+        Price level: #{selected_restaurant[:price] || price_level}.
+        Include details about the food, atmosphere, and vibe.
+        Output only valid JSON like: {"description": "..."}
+      PROMPT
+
+      response = openai.chat(
+        parameters: {
+          model: "gpt-4o-mini",
+          messages: [
+            { role: "system", content: "You generate realistic restaurant descriptions. Output valid JSON only." },
+            { role: "user", content: description_prompt }
+          ],
+          temperature: 0.7
+        }
+      )
+
+      ai_data = JSON.parse(response.dig("choices", 0, "message", "content") || "{}") rescue {}
+      ai_description = ai_data["description"] || "A popular restaurant in #{city} serving delicious #{category || 'food'}."
+
+      # 0–10 rating
+      rating = selected_restaurant[:rating].to_f > 0 ? [[selected_restaurant[:rating].to_f * 2, 10.0].min, 0.0].max : rand(60..100)/10.0
+      rating += [-0.5, -0.3, 0, 0.3, 0.5].sample
+      rating = [[rating, 10.0].min, 0.0].max.round(1)
+
+      final_restaurant = {
+        name: selected_restaurant[:name],
+        address: selected_restaurant[:address],
         city: city,
         state: "IL",
         zip_code: nil,
-        rating: r[:rating],
-        price: r[:price],
-        latitude: r[:latitude],
-        longitude: r[:longitude],
+        rating: rating,
+        price: selected_restaurant[:price],
+        latitude: selected_restaurant[:latitude],
+        longitude: selected_restaurant[:longitude],
         category: category || "Restaurant",
         food_type: category || "Various",
         description: ai_description,
@@ -114,72 +126,54 @@ class RestaurantsController < ApplicationController
         parking: "Street",
         opening_hours: nil,
         website: nil,
-        email: nil,
-        user_id: current_user.id # attach current_user to AI-generated restaurants
+        email: nil
       }
-    end
 
-    if save_to_db
-      restaurants = enriched_restaurants.map do |r|
-        restaurant = current_user.restaurants.create(r) # ensure user is assigned
+      if save_to_db
+        restaurant = Restaurant.create!(final_restaurant)
 
-        if restaurant.persisted?
-          begin
-            prompt = "A photo of #{restaurant.name}, a #{restaurant.category} in #{city}"
-            image_resp = openai.images.generate(parameters: { prompt: prompt, size: "512x512" })
-            image_url = image_resp.dig("data", 0, "url")
-
-            if image_url
-              downloaded_image = URI.open(image_url)
-              restaurant.images.attach(
-                io: downloaded_image,
-                filename: "#{restaurant.name.parameterize}.png"
-              )
-            end
-          rescue => e
-            Rails.logger.error "Image generation failed for #{restaurant.name}: #{e.message}"
+        # Generate image and attach
+        begin
+          image_prompt = "A high-quality photo of #{restaurant.name}, a #{restaurant.category} in #{city}"
+          image_resp = openai.images.generate(parameters: { prompt: image_prompt, size: "512x512" })
+          image_url = image_resp.dig("data", 0, "url")
+          if image_url
+            downloaded_image = URI.open(image_url)
+            restaurant.images.attach(io: downloaded_image, filename: "#{restaurant.name.parameterize}.png")
           end
+        rescue => img_err
+          Rails.logger.error "Image generation failed for #{restaurant.name}: #{img_err.message}"
         end
 
-        restaurant
+        render json: restaurant_json(restaurant), status: :created
+      else
+        render json: final_restaurant
       end
 
-      render json: restaurants.map { |r| restaurant_json(r) }, status: :created
-    else
-      # Include current_user info even if not saved
-      enriched_restaurants.each do |r|
-        r[:user] = {
-          id: current_user.id,
-          name: current_user.name,
-          email: current_user.email
-        } if defined?(current_user)
-      end
-      render json: enriched_restaurants
+    rescue => e
+      Rails.logger.error "generate_restaurant failed: #{e.message}\n#{e.backtrace.join("\n")}"
+      render json: { error: e.message }, status: 500
     end
   end
 
   private
 
-  # Callbacks
   def set_restaurant
     @restaurant = Restaurant.find(params[:id])
   rescue ActiveRecord::RecordNotFound
     render json: { error: 'Restaurant not found' }, status: :not_found
   end
 
-  # Strong parameters
   def restaurant_params
     params.require(:restaurant).permit(
       :name, :price, :rating, :food_type, :category,
       :description, :phone_number, :website, :email,
       :address, :city, :state, :zip_code,
       :latitude, :longitude, :opening_hours,
-      :delivery_option, :vegan_friendly, :kid_friendly, :parking,
-      :user_id
+      :delivery_option, :vegan_friendly, :kid_friendly, :parking
     )
   end
 
-  # JSON helper for restaurant
   def restaurant_json(restaurant)
     {
       id: restaurant.id,
@@ -207,58 +201,7 @@ class RestaurantsController < ApplicationController
       updated_at: restaurant.updated_at,
       images: restaurant.images.map do |img|
         Rails.application.routes.url_helpers.rails_blob_url(img, host: request.base_url)
-      end,
-      user: restaurant.user.present? ? {
-        id: restaurant.user.id,
-        name: restaurant.user.name,
-        email: restaurant.user.email
-      } : nil
+      end
     }
-  end
-
-  # Build AI prompt
-  def build_restaurant_prompt(city: nil, category: nil, price: nil, description: nil)
-    schema = {
-      "name" => "string",
-      "food_type" => "string",
-      "description" => "string",
-      "phone_number" => "string",
-      "website" => "string",
-      "email" => "string",
-      "address" => "string",
-      "city" => "string",
-      "state" => "string",
-      "zip_code" => "string",
-      "latitude" => "number",
-      "longitude" => "number",
-      "opening_hours" => "string",
-      "delivery_option" => "boolean",
-      "vegan_friendly" => "boolean",
-      "kid_friendly" => "boolean",
-      "parking" => "string",
-      "price" => "string",
-      "category" => "string"
-    }
-
-    system_message = <<~SYS
-      You are a professional restauranteur. Produce exactly one valid JSON object following this schema (no additional text):
-      #{JSON.pretty_generate(schema)}
-
-      - The "description" field should be a rich, enticing 3–6 sentence paragraph describing the restaurant’s atmosphere, style, and cuisine.
-      - Be specific and creative. Pretend you visited the restaurant.
-      - Use null for unknown numeric values.
-      - Boolean fields must be true or false.
-      - Include realistic data for address, phone, and website if missing.
-      - Do NOT include markdown, labels, or commentary — JSON only.
-    SYS
-
-    user_message = "Find a restaurant"
-    user_message += " in city: #{city}" if city.present?
-    user_message += " with category: #{category}" if category.present?
-    user_message += " with price: #{price}" if price.present?
-    user_message += ". Include a detailed, enticing description field."
-    user_message += ". Return JSON only."
-
-    { system: system_message, user: user_message }
   end
 end

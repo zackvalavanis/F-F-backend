@@ -4,5 +4,4 @@ class User < ApplicationRecord
   has_many :recipes
   has_many :ratings, dependent: :destroy
   has_many :rated_recipes, through: :ratings, source: :recipe
-  has_many :restaurants
 end

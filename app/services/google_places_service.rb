@@ -1,6 +1,3 @@
-require 'httparty'
-require 'json'
-
 class GooglePlacesService 
   BASE_URL = "https://maps.googleapis.com/maps/api/place/textsearch/json"
 
@@ -10,24 +7,25 @@ class GooglePlacesService
 
   # Fetch real restaurants
   # city: string, category: string (optional), price_level: 0..4 (optional)
-  def fetch_restaurants(city:, category: nil, price_level: nil, limit: 1)
+  # limit: number of restaurants to return
+  def fetch_restaurants(city:, category: nil, price_level: nil, limit: 10)
     restaurants = []
     query = "restaurants in #{city}"
     query += " #{category}" if category.present?
-  
+
     params = {
       query: query,
       key: @api_key,
       type: 'restaurant'
     }
     params[:maxprice] = price_level if price_level.present?
-  
+
     url = BASE_URL
     loop do
       response = HTTParty.get(url, query: params)
       data = JSON.parse(response.body)
       results = data['results'] || []
-      
+
       restaurants += results.map do |r|
         {
           name: r['name'],
@@ -50,14 +48,14 @@ class GooglePlacesService
           email: nil
         }
       end
-  
+
       break if restaurants.size >= limit || data['next_page_token'].blank?
-  
+
       # Google requires a short delay before using next_page_token
       sleep 2
       params = { key: @api_key, pagetoken: data['next_page_token'] }
     end
-  
-    restaurants.first(limit)
+
+    restaurants.uniq { |r| [r[:name].downcase.strip, r[:address].downcase.strip] }.shuffle.first(limit)
   end
-end  
+end
